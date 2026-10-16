@@ -7,6 +7,8 @@ import Catalog from './pages/Catalog.jsx';
 import Infrastructure from './pages/Infrastructure.jsx';
 import Pricing from './pages/Pricing.jsx';
 import Instances from './pages/Instances.jsx';
+import Storage from './pages/Storage.jsx';
+import Network from './pages/Network.jsx';
 
 function Protected({ roles, children }) {
   const user = session.user;
@@ -24,7 +26,9 @@ export default function App() {
       <Route path="/infrastructure" element={<Protected roles={['super_admin', 'support']}><Infrastructure /></Protected>} />
       <Route path="/pricing" element={<Protected roles={['super_admin', 'billing', 'support']}><Pricing /></Protected>} />
       <Route path="/instances" element={<Protected><Instances /></Protected>} />
-      {/* Step 4+: /volumes, /billing, /tickets, /admin/... */}
+      <Route path="/storage" element={<Protected><Storage /></Protected>} />
+      <Route path="/network" element={<Protected><Network /></Protected>} />
+      {/* Step 5+: /invoices, /billing, /tickets, /admin/... */}
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

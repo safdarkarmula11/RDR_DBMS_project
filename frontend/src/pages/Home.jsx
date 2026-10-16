@@ -5,7 +5,7 @@ const ROADMAP = [
   ['Step 1', 'Setup, login, identity tables', true],
   ['Step 2', 'Infrastructure: regions, hosts, instance types, temporal pricing', true],
   ['Step 3', 'Compute: instances, scheduler procedure, quota triggers', true],
-  ['Step 4', 'Storage and network: volumes, snapshots, IPs, domains', false],
+  ['Step 4', 'Storage and network: volumes, snapshots, IPs, domains', true],
   ['Step 5', 'Metering, billing, payments, events', false],
   ['Step 6', 'Support tickets, audit triggers, consistency checks', false],
   ['Step 7', 'Data generator, indexes, partitioning, benchmarks', false],
