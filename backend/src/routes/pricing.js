@@ -9,8 +9,24 @@ const router = Router();
 
 router.use(authenticate);
 
-// GET /pricing/:typeId - Price history of one instance type
-router.get('/:typeId', requireRole('super_admin', 'billing', 'support'), validate({ params: typeIdParamSchema }), async (req, res, next) => {
+// GET /pricing - Current active prices for all instance types
+router.get('/', async (req, res, next) => {
+  try {
+    const rows = await withDb(req, async (conn) => {
+      const [result] = await conn.execute(
+        `SELECT * FROM v_current_pricing ORDER BY type_id ASC`
+      );
+      return result;
+    });
+
+    res.json(rows);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /pricing/:typeId and /pricing/history/:typeId - Price history of one instance type
+const handlePriceHistory = async (req, res, next) => {
   try {
     const typeId = Number(req.params.typeId);
     const rows = await withDb(req, async (conn) => {
@@ -28,7 +44,10 @@ router.get('/:typeId', requireRole('super_admin', 'billing', 'support'), validat
   } catch (err) {
     next(err);
   }
-});
+};
+
+router.get('/history/:typeId', requireRole('super_admin', 'billing', 'support'), validate({ params: typeIdParamSchema }), handlePriceHistory);
+router.get('/:typeId', requireRole('super_admin', 'billing', 'support'), validate({ params: typeIdParamSchema }), handlePriceHistory);
 
 // GET /pricing/:typeId/as-of/:date - Price as of a specific date using fn_hourly_price
 router.get('/:typeId/as-of/:date', requireRole('super_admin', 'billing', 'support'), async (req, res, next) => {
@@ -50,15 +69,21 @@ router.get('/:typeId/as-of/:date', requireRole('super_admin', 'billing', 'suppor
   }
 });
 
-// POST /pricing - Set price from effective date (admin only)
-router.post('/', requireRole('super_admin'), validate({ body: setPriceSchema }), async (req, res, next) => {
+// POST /pricing and POST /pricing/:typeId - Set price from effective date (admin only)
+const handleSetPrice = async (req, res, next) => {
   try {
-    const { type_id, price_per_hour, effective_from } = req.body;
+    const typeId = Number(req.params.typeId || req.body.type_id);
+    const { price_per_hour } = req.body;
+    const effectiveDate = req.body.effective_from || req.body.valid_from || new Date().toISOString().split('T')[0];
+
+    if (!typeId) {
+      return res.status(400).json({ code: 'INVALID', msg: 'Instance type ID is required' });
+    }
 
     await withDb(req, async (conn) => {
       await conn.execute(
         'CALL sp_set_price(?, ?, ?)',
-        [type_id, price_per_hour, effective_from]
+        [typeId, price_per_hour, effectiveDate]
       );
     });
 
@@ -66,6 +91,9 @@ router.post('/', requireRole('super_admin'), validate({ body: setPriceSchema }),
   } catch (err) {
     next(err);
   }
-});
+};
+
+router.post('/:typeId', requireRole('super_admin'), handleSetPrice);
+router.post('/', requireRole('super_admin'), validate({ body: setPriceSchema }), handleSetPrice);
 
 export default router;

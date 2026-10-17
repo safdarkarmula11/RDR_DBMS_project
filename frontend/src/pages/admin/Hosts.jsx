@@ -74,7 +74,10 @@ export default function Hosts() {
 
   const handleAddHost = async (e) => {
     e.preventDefault();
-    if (!hostForm.hostname) return;
+    if (!hostForm.hostname || !hostForm.hostname.trim()) {
+      toast.error('Hostname is required.');
+      return;
+    }
     try {
       setActionLoading(true);
       await api.post('/infra/hosts', hostForm);

@@ -22,6 +22,10 @@ import billingRoutes from './routes/billing.js';
 import ticketsRoutes from './routes/tickets.js';
 import adminRoutes from './routes/admin.js';
 import reportsRoutes from './routes/reports.js';
+import invoicesRoutes from './routes/invoices.js';
+import usageRoutes from './routes/usage.js';
+import supportRoutes from './routes/support.js';
+import simulatorRoutes from './routes/simulator.js';
 
 const app = express();
 
@@ -89,6 +93,10 @@ app.use('/api/billing', billingRoutes);
 app.use('/api/tickets', ticketsRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/reports', reportsRoutes);
+app.use('/api/invoices', invoicesRoutes);
+app.use('/api/usage', usageRoutes);
+app.use('/api/support', supportRoutes);
+app.use('/api/simulator', simulatorRoutes);
 
 // Catch-all 404 for unknown endpoints
 app.use((_req, res) => {

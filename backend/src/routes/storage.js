@@ -62,8 +62,8 @@ router.get('/volumes', async (req, res, next) => {
   }
 });
 
-// POST /storage/volumes - Create volume
-router.post('/', requireRole('customer'), validate({ body: createVolumeSchema }), async (req, res, next) => {
+// POST /storage/volumes (or /storage) - Create volume
+router.post(['/', '/volumes'], requireRole('customer'), validate({ body: createVolumeSchema }), async (req, res, next) => {
   try {
     const u = req.user;
     const { region_id, name, size_gb, vol_type } = req.body;
@@ -188,6 +188,35 @@ router.get('/snapshots', async (req, res, next) => {
     next(err);
   }
 });
+
+// POST /storage/snapshots - Take snapshot directly with volume_id in body
+router.post(
+  '/snapshots',
+  requireRole('customer'),
+  validate({ body: createSnapshotSchema }),
+  async (req, res, next) => {
+    try {
+      const { volume_id, name } = req.body;
+      const u = req.user;
+
+      if (!volume_id) {
+        return res.status(400).json({ code: 'INVALID', msg: 'Volume ID is required' });
+      }
+
+      const result = await withDb(req, async (conn) => {
+        const [out] = await conn.execute(
+          'CALL sp_take_snapshot(?, ?, ?)',
+          [Number(volume_id), u.org_id, name]
+        );
+        return out[0]?.[0];
+      });
+
+      res.status(201).json(result);
+    } catch (err) {
+      next(err);
+    }
+  }
+);
 
 // POST /storage/volumes/:id/snapshots - Take snapshot
 router.post(

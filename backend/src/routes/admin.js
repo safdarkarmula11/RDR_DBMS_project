@@ -10,23 +10,51 @@ const router = Router();
 router.use(authenticate);
 router.use(requireRole('super_admin'));
 
-// GET /admin/consistency-check - Run full integrity consistency check
-router.get('/consistency-check', async (req, res, next) => {
+// GET & POST /admin/consistency-check - Run full integrity consistency check
+const handleConsistencyCheck = async (req, res, next) => {
   try {
     const results = await withDb(req, async (conn) => {
       const [out] = await conn.execute('CALL sp_check_consistency()');
       return out[0] || [];
     });
 
+    const standardChecks = [
+      { id: 'chk_1', key: 'host_used_counters', name: 'Physical Host Resource Accounting', details: 'Physical host used_vcpu, used_ram_gb, used_disk_gb match active VM rows exactly.' },
+      { id: 'chk_2', key: 'host_overbooked', name: 'Hypervisor Overbooking Verification', details: 'No physical hypervisor host exceeds 100% capacity in compute or storage.' },
+      { id: 'chk_3', key: 'org_quota', name: 'Tenant Tier Quota Compliance', details: 'No tenant exceeds allocated compute instance count or persistent storage quotas.' },
+      { id: 'chk_4', key: 'orphan_ip', name: 'Public IP Pool Orphan Verification', details: 'No IP is allocated to a terminated or nonexistent instance ID.' },
+      { id: 'chk_5', key: 'invoice_total', name: 'Invoice Item Arithmetic & Total Integrity', details: 'CHECK total = subtotal + tax - credit_applied holds across 100% of invoice records.' },
+      { id: 'chk_6', key: 'partition', name: 'Partition Boundary Alignment (usage_records)', details: 'RANGE COLUMNS monthly partitions are active and properly bounded.' },
+    ];
+
+    const checks = standardChecks.map(c => {
+      const matchingViolations = results.filter(r => 
+        (r.check_name && r.check_name.toLowerCase().includes(c.key.toLowerCase())) ||
+        (r.message && r.message.toLowerCase().includes(c.key.toLowerCase()))
+      );
+      const issuesCount = matchingViolations.length;
+      return {
+        id: c.id,
+        name: c.name,
+        status: issuesCount === 0 ? 'pass' : 'fail',
+        issues_count: issuesCount,
+        details: issuesCount === 0 ? c.details : matchingViolations.map(v => v.message).join('; '),
+      };
+    });
+
     res.json({
       timestamp: new Date().toISOString(),
       violation_count: results.length,
       violations: results,
+      checks,
     });
   } catch (err) {
     next(err);
   }
-});
+};
+
+router.get('/consistency-check', handleConsistencyCheck);
+router.post('/consistency-check', handleConsistencyCheck);
 
 // GET /admin/audit - Query audit log with filters
 router.get('/audit', async (req, res, next) => {

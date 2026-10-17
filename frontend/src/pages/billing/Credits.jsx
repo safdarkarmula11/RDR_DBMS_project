@@ -56,7 +56,10 @@ export default function Credits() {
 
   const handleGrantCredit = async (e) => {
     e.preventDefault();
-    if (!creditForm.org_id || !creditForm.amount) return;
+    if (!creditForm.org_id || !creditForm.amount || Number(creditForm.amount) <= 0) {
+      toast.error('Organization and a positive credit amount are required.');
+      return;
+    }
     try {
       setActionLoading(true);
       await api.post('/billing/credits', {

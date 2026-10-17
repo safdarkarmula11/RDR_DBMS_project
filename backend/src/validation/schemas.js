@@ -51,7 +51,10 @@ export const updateOrgSchema = z.object({
 
 export const addMemberSchema = z.object({
   email: z.string().email(),
-  member_role: z.enum(['owner', 'member']).default('member'),
+  member_role: z.enum(['owner', 'member']).optional(),
+  role: z.enum(['owner', 'member']).optional(),
+  fullName: z.string().optional(),
+  full_name: z.string().optional(),
 }).strict();
 
 export const createApiKeySchema = z.object({
@@ -96,6 +99,7 @@ export const resizeVolumeSchema = z.object({
 }).strict();
 
 export const createSnapshotSchema = z.object({
+  volume_id: z.coerce.number().int().positive().optional(),
   name: z.string().regex(nameSlugRegex, 'Snapshot name must be lowercase alphanumeric with hyphens'),
 }).strict();
 
@@ -120,11 +124,21 @@ export const dnsRecordSchema = z.object({
   priority: z.coerce.number().int().min(0).max(65535).nullable().optional(),
 }).strict();
 
+export const dnsRecordDirectSchema = z.object({
+  domain_id: z.coerce.number().int().positive(),
+  rtype: z.enum(['A', 'AAAA', 'CNAME', 'MX', 'TXT']),
+  name: z.string().trim().toLowerCase().default('@'),
+  value: z.string().trim().min(1),
+  ttl: z.coerce.number().int().min(60).max(86400).default(3600),
+  priority: z.coerce.number().int().min(0).max(65535).nullable().optional(),
+}).strict();
+
 // ==========================================
 // BILLING
 // ==========================================
 export const generateInvoiceSchema = z.object({
-  org_id: z.coerce.number().int().positive().optional(),
+  scope: z.enum(['single', 'all']).optional(),
+  org_id: z.coerce.number().int().positive().nullable().optional(),
   period_start: z.string().regex(dateRegex, 'Date format YYYY-MM-DD required'),
   period_end: z.string().regex(dateRegex, 'Date format YYYY-MM-DD required'),
 }).strict();
@@ -139,6 +153,7 @@ export const addCreditSchema = z.object({
   org_id: z.coerce.number().int().positive(),
   amount: z.coerce.number().positive(),
   note: z.string().trim().optional(),
+  reason: z.string().trim().optional(),
 }).strict();
 
 // ==========================================
@@ -222,4 +237,5 @@ export const simulateUsageSchema = z.object({
 
 export const perfRunSchema = z.object({
   queryId: z.enum(['Q1', 'Q2', 'Q3', 'Q4', 'Q5', 'Q6', 'Q7', 'Q8', 'Q9', 'Q10']),
+  indexVisible: z.boolean().optional(),
 }).strict();

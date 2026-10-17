@@ -20,6 +20,14 @@ export default function GenerateInvoice() {
 
   const handleGenerate = async (e) => {
     e.preventDefault();
+    if (targetScope === 'single' && !targetOrgId) {
+      toast.error('Please specify an organization ID for single invoice generation.');
+      return;
+    }
+    if (!periodStart || !periodEnd) {
+      toast.error('Both billing cycle start and end dates are required.');
+      return;
+    }
     try {
       setRunning(true);
       const payload = {

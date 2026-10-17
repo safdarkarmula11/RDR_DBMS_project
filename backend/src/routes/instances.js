@@ -140,38 +140,44 @@ router.post(
   }
 );
 
-// PATCH /instances/:id/status - start / stop / suspend / reactivate
-router.patch(
-  '/:id/status',
-  validate({ params: idParamSchema, body: statusUpdateSchema }),
-  async (req, res, next) => {
-    try {
-      const instanceId = Number(req.params.id);
-      const u = req.user;
-      const { status } = req.body;
+// PATCH & POST /instances/:id/status - start / stop / suspend / reactivate / terminate
+const handleStatusUpdate = async (req, res, next) => {
+  try {
+    const instanceId = Number(req.params.id);
+    const u = req.user;
+    const { status } = req.body;
 
-      if (u.role === 'customer') {
-        if (!['running', 'stopped', 'terminated'].includes(status)) {
-          return res.status(403).json({ code: 'FORBIDDEN', msg: 'Customers can only start, stop, or terminate instances' });
-        }
-        if (status === 'terminated' && u.member_role !== 'owner') {
-          return res.status(403).json({ code: 'FORBIDDEN', msg: 'Only the organization owner can terminate instances' });
-        }
+    if (u.role === 'customer') {
+      if (!['running', 'stopped', 'terminated'].includes(status)) {
+        return res.status(403).json({ code: 'FORBIDDEN', msg: 'Customers can only start, stop, or terminate instances' });
       }
+      if (status === 'terminated' && u.member_role !== 'owner') {
+        return res.status(403).json({ code: 'FORBIDDEN', msg: 'Only the organization owner can terminate instances' });
+      }
+    }
 
-      await withDb(req, async (conn) => {
+    await withDb(req, async (conn) => {
+      if (status === 'terminated') {
+        await conn.execute(
+          'CALL sp_terminate_instance(?, ?)',
+          [instanceId, u.role === 'customer' ? u.org_id : null]
+        );
+      } else {
         await conn.execute(
           'CALL sp_set_instance_status(?, ?, ?)',
           [instanceId, u.role === 'customer' ? u.org_id : null, status]
         );
-      });
+      }
+    });
 
-      res.json({ ok: true });
-    } catch (err) {
-      next(err);
-    }
+    res.json({ ok: true });
+  } catch (err) {
+    next(err);
   }
-);
+};
+
+router.patch('/:id/status', validate({ params: idParamSchema, body: statusUpdateSchema }), handleStatusUpdate);
+router.post('/:id/status', validate({ params: idParamSchema, body: statusUpdateSchema }), handleStatusUpdate);
 
 // POST /instances/:id/resize - Resize instance (CALL sp_resize_instance)
 router.post(

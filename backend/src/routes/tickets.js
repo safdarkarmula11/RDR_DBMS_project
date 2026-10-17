@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { withDb } from '../db.js';
+import { withDb, withTransactionRetry } from '../db.js';
 import { authenticate } from '../middleware/auth.js';
 import { validate } from '../middleware/validation.js';
 import {
@@ -153,7 +153,34 @@ router.get('/:id', validate({ params: idParamSchema }), async (req, res, next) =
   }
 });
 
-// POST /tickets - Create ticket with initial message
+// GET /tickets/:id/messages - Dedicated messages endpoint for ticket thread
+router.get('/:id/messages', validate({ params: idParamSchema }), async (req, res, next) => {
+  try {
+    const ticketId = Number(req.params.id);
+    const u = req.user;
+
+    const messages = await withDb(req, async (conn) => {
+      await verifyTicketAccess(conn, u, ticketId);
+      const [rows] = await conn.execute(
+        `SELECT tm.message_id, tm.ticket_id, tm.body, tm.created_at,
+                u.user_id AS sender_id, u.full_name AS sender_name, u.system_role AS sender_role,
+                (u.system_role <> 'customer') AS is_staff
+         FROM ticket_messages tm
+         JOIN users u ON u.user_id = tm.sender_id
+         WHERE tm.ticket_id = ?
+         ORDER BY tm.created_at ASC`,
+        [ticketId]
+      );
+      return rows;
+    });
+
+    res.json(messages);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /tickets - Create ticket with initial message (Atomic Transaction)
 router.post('/', validate({ body: createTicketSchema }), async (req, res, next) => {
   try {
     const u = req.user;
@@ -165,25 +192,27 @@ router.post('/', validate({ body: createTicketSchema }), async (req, res, next) 
     const orgId = u.org_id || 1; // Staff default to internal org
 
     const result = await withDb(req, async (conn) => {
-      // 1. Create ticket
-      const [tResult] = await conn.execute(
-        'INSERT INTO tickets(org_id, created_by, subject, priority, status) VALUES (?, ?, ?, ?, ?)',
-        [orgId, u.sub, subject, priority, 'open']
-      );
-      const ticketId = tResult.insertId;
+      return withTransactionRetry(conn, async () => {
+        // 1. Create ticket
+        const [tResult] = await conn.execute(
+          'INSERT INTO tickets(org_id, created_by, subject, priority, status) VALUES (?, ?, ?, ?, ?)',
+          [orgId, u.sub, subject, priority, 'open']
+        );
+        const ticketId = tResult.insertId;
 
-      // 2. Add first message
-      await conn.execute(
-        'INSERT INTO ticket_messages(ticket_id, sender_id, body) VALUES (?, ?, ?)',
-        [ticketId, u.sub, message]
-      );
+        // 2. Add first message
+        await conn.execute(
+          'INSERT INTO ticket_messages(ticket_id, sender_id, body) VALUES (?, ?, ?)',
+          [ticketId, u.sub, message]
+        );
 
-      return {
-        ticket_id: ticketId,
-        subject,
-        priority,
-        status: 'open',
-      };
+        return {
+          ticket_id: ticketId,
+          subject,
+          priority,
+          status: 'open',
+        };
+      });
     });
 
     res.status(201).json(result);

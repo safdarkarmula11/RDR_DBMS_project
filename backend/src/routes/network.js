@@ -8,6 +8,7 @@ import {
   registerDomainSchema,
   renewDomainSchema,
   dnsRecordSchema,
+  dnsRecordDirectSchema,
 } from '../validation/schemas.js';
 
 const router = Router();
@@ -203,8 +204,58 @@ router.put('/records/:id', requireRole('customer'), validate({ params: idParamSc
   }
 });
 
-// DELETE /network/records/:id - Delete DNS record
-router.delete('/records/:id', requireRole('customer'), validate({ params: idParamSchema }), async (req, res, next) => {
+// GET /network/dns - List all DNS records across domains
+router.get('/dns', async (req, res, next) => {
+  try {
+    const u = req.user;
+    const isCustomer = u.role === 'customer';
+    const params = isCustomer ? [u.org_id || 0] : [];
+
+    const rows = await withDb(req, async (conn) => {
+      const sql = `SELECT r.record_id, r.domain_id, d.name AS domain_name, r.rtype, r.name, r.value, r.ttl, r.priority
+                   FROM dns_records r
+                   JOIN domains d ON d.domain_id = r.domain_id
+                   ${isCustomer ? 'WHERE d.org_id = ?' : ''}
+                   ORDER BY r.record_id DESC`;
+      const [result] = await conn.execute(sql, params);
+      return result;
+    });
+
+    res.json(rows);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /network/dns - Add DNS record directly
+router.post(
+  '/dns',
+  requireRole('customer'),
+  validate({ body: dnsRecordDirectSchema }),
+  async (req, res, next) => {
+    try {
+      const { domain_id, rtype, name, value, ttl, priority } = req.body;
+      const u = req.user;
+
+      const result = await withDb(req, async (conn) => {
+        await verifyDomainAccess(conn, u, domain_id);
+        const [out] = await conn.execute(
+          `INSERT INTO dns_records(domain_id, rtype, name, value, ttl, priority)
+           VALUES (?, ?, ?, ?, ?, ?)`,
+          [domain_id, rtype, name || '@', value, ttl || 3600, priority ?? null]
+        );
+        return { record_id: out.insertId, domain_id, rtype, name: name || '@', value, ttl: ttl || 3600, priority: priority ?? null };
+      });
+
+      res.status(201).json(result);
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+// DELETE /network/dns/:id and /network/records/:id - Delete DNS record
+router.delete(['/dns/:id', '/records/:id'], requireRole('customer'), validate({ params: idParamSchema }), async (req, res, next) => {
   try {
     const recordId = Number(req.params.id);
     const u = req.user;

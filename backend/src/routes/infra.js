@@ -130,6 +130,71 @@ router.put(
   }
 );
 
+// POST /infra/hosts/:id/status - Update host status
+router.post(
+  '/hosts/:id/status',
+  canManage,
+  validate({ params: idParamSchema }),
+  async (req, res, next) => {
+    try {
+      const hostId = Number(req.params.id);
+      const { status } = req.body;
+      if (!['active', 'maintenance', 'retired'].includes(status)) {
+        return res.status(400).json({ code: 'INVALID', msg: 'Invalid host status' });
+      }
+
+      await withDb(req, async (conn) => {
+        await conn.execute('UPDATE hosts SET status = ? WHERE host_id = ?', [status, hostId]);
+      });
+
+      res.json({ ok: true, status });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+// GET /infra/audit - System audit log with diffs
+router.get('/audit', canView, async (req, res, next) => {
+  try {
+    const { table, record_id, action, limit = 50 } = req.query;
+    const where = [];
+    const params = [];
+
+    if (table) {
+      where.push('a.table_name = ?');
+      params.push(String(table));
+    }
+    if (record_id) {
+      where.push('a.record_id = ?');
+      params.push(Number(record_id));
+    }
+    if (action) {
+      where.push('a.action = ?');
+      params.push(String(action).toUpperCase());
+    }
+
+    const rows = await withDb(req, async (conn) => {
+      const sql = `SELECT a.audit_id, a.table_name, a.record_id, a.action,
+                          a.old_data, a.new_data, a.changed_at, a.changed_by,
+                          COALESCE(u.full_name, 'system') AS changed_by_name
+                   FROM audit_log a
+                   LEFT JOIN users u ON u.user_id = a.changed_by
+                   ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
+                   ORDER BY a.changed_at DESC
+                   LIMIT ?`;
+
+      params.push(Math.min(Number(limit) || 50, 200));
+      const [result] = await conn.execute(sql, params);
+      return result;
+    });
+
+    res.json(rows);
+  } catch (err) {
+    next(err);
+  }
+});
+
 // GET /infra/regions - List regions with host counts
 router.get('/regions', canView, async (req, res, next) => {
   try {

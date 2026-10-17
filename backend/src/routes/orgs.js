@@ -55,6 +55,70 @@ router.get('/', async (req, res, next) => {
   }
 });
 
+// GET /orgs/members - List members of current organization
+router.get('/members', async (req, res, next) => {
+  try {
+    const orgId = req.user.org_id;
+    if (!orgId) return res.json([]);
+    const members = await withDb(req, async (conn) => {
+      const [rows] = await conn.execute(
+        `SELECT u.user_id, u.email, u.full_name, u.status, om.member_role, om.joined_at
+         FROM org_members om
+         JOIN users u ON u.user_id = om.user_id
+         WHERE om.org_id = ?
+         ORDER BY om.joined_at ASC`,
+        [orgId]
+      );
+      return rows;
+    });
+
+    res.json(members);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /orgs/members - Add member by email to current org
+router.post('/members', validate({ body: addMemberSchema }), async (req, res, next) => {
+  try {
+    const orgId = req.user.org_id;
+    if (!orgId) {
+      return res.status(400).json({ code: 'NO_ORG', msg: 'User does not belong to an organization' });
+    }
+    if (req.user.role === 'customer' && req.user.member_role !== 'owner') {
+      return res.status(403).json({ code: 'FORBIDDEN', msg: 'Only the organization owner can add members' });
+    }
+
+    const { email, member_role, role } = req.body;
+    const finalRole = member_role || role || 'member';
+
+    const result = await withDb(req, async (conn) => {
+      const [users] = await conn.execute(
+        'SELECT user_id FROM users WHERE email = ?',
+        [email]
+      );
+      const user = users[0];
+      if (!user) {
+        const err = new Error('No user found with that email address');
+        err.statusCode = 404;
+        err.code = 'NOT_FOUND';
+        throw err;
+      }
+
+      await conn.execute(
+        'INSERT INTO org_members(org_id, user_id, member_role) VALUES (?, ?, ?)',
+        [orgId, user.user_id, finalRole]
+      );
+
+      return { org_id: orgId, user_id: user.user_id, member_role: finalRole };
+    });
+
+    res.status(201).json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
 // GET /orgs/:id - Org detail (404 for wrong tenant)
 router.get('/:id', validate({ params: idParamSchema }), tenantGuard('id'), async (req, res, next) => {
   try {
@@ -141,6 +205,8 @@ router.patch(
   }
 );
 
+
+
 // GET /orgs/:id/members - List members
 router.get('/:id/members', validate({ params: idParamSchema }), tenantGuard('id'), async (req, res, next) => {
   try {
@@ -175,7 +241,9 @@ router.post(
         return res.status(403).json({ code: 'FORBIDDEN', msg: 'Only the organization owner can add members' });
       }
 
-      const { email, member_role } = req.body;
+      const { email, member_role, role } = req.body;
+      const finalRole = member_role || role || 'member';
+
       const result = await withDb(req, async (conn) => {
         const [users] = await conn.execute(
           'SELECT user_id FROM users WHERE email = ?',
@@ -191,10 +259,10 @@ router.post(
 
         await conn.execute(
           'INSERT INTO org_members(org_id, user_id, member_role) VALUES (?, ?, ?)',
-          [orgId, user.user_id, member_role]
+          [orgId, user.user_id, finalRole]
         );
 
-        return { org_id: orgId, user_id: user.user_id, member_role };
+        return { org_id: orgId, user_id: user.user_id, member_role: finalRole };
       });
 
       res.status(201).json(result);
@@ -209,6 +277,10 @@ router.delete('/:id/members/:userId', tenantGuard('id'), async (req, res, next) 
   try {
     const orgId = Number(req.params.id);
     const targetUserId = Number(req.params.userId);
+
+    if (isNaN(targetUserId)) {
+      return res.status(400).json({ code: 'INVALID', msg: 'Invalid user ID' });
+    }
 
     if (req.user.role === 'customer' && req.user.member_role !== 'owner') {
       return res.status(403).json({ code: 'FORBIDDEN', msg: 'Only owner can remove members' });

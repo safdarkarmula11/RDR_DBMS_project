@@ -60,7 +60,10 @@ export default function Team() {
 
   const handleInvite = async (e) => {
     e.preventDefault();
-    if (!inviteForm.email) return;
+    if (!inviteForm.email || !inviteForm.email.includes('@')) {
+      toast.error('Please enter a valid email address.');
+      return;
+    }
     try {
       setActionLoading(true);
       await api.post('/orgs/members', inviteForm);
@@ -77,9 +80,13 @@ export default function Team() {
 
   const handleGenerateKey = async (e) => {
     e.preventDefault();
+    if (!keyLabel.trim()) {
+      toast.error('Please enter a label for the API key.');
+      return;
+    }
     try {
       setActionLoading(true);
-      const res = await api.post('/auth/api-keys', { label: keyLabel });
+      const res = await api.post('/auth/api-keys', { label: keyLabel.trim() });
       const rawSecret = res.raw_key || `nb_${Math.random().toString(36).substring(2)}${Math.random().toString(36).substring(2)}`;
       setGeneratedKeyResult(rawSecret);
       toast.success('API key generated.');
