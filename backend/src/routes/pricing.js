@@ -1,27 +1,71 @@
 import { Router } from 'express';
-import { pool, withUser } from '../db.js';
-import { allow, wrap } from '../middleware.js';
+import { withDb } from '../db.js';
+import { authenticate } from '../middleware/auth.js';
+import { requireRole } from '../middleware/rbac.js';
+import { validate } from '../middleware/validation.js';
+import { setPriceSchema, typeIdParamSchema } from '../validation/schemas.js';
 
-const r = Router();
+const router = Router();
 
-// Price history of one instance type (newest period first)
-r.get('/:typeId', allow('super_admin', 'billing'), wrap(async (req, res) => {
-  const [rows] = await pool.query(
-    'SELECT * FROM v_pricing_history WHERE type_id = ? ORDER BY valid_from DESC', [req.params.typeId]);
-  res.json(rows);
-}));
+router.use(authenticate);
 
-// Price as of a date, using the stored function
-r.get('/:typeId/as-of/:date', allow('super_admin', 'billing'), wrap(async (req, res) => {
-  const [[row]] = await pool.query('SELECT fn_hourly_price(?, ?) AS price_per_hour', [req.params.typeId, req.params.date]);
-  res.json(row);
-}));
+// GET /pricing/:typeId - Price history of one instance type
+router.get('/:typeId', requireRole('super_admin', 'billing', 'support'), validate({ params: typeIdParamSchema }), async (req, res, next) => {
+  try {
+    const typeId = Number(req.params.typeId);
+    const rows = await withDb(req, async (conn) => {
+      const [result] = await conn.execute(
+        `SELECT price_id, type_id, type_name, price_per_hour, valid_from, valid_to, period_status
+         FROM v_pricing_history
+         WHERE type_id = ?
+         ORDER BY valid_from DESC`,
+        [typeId]
+      );
+      return result;
+    });
 
-// Set a new price from a date: the procedure closes the old period and opens the new one atomically
-r.post('/', allow('super_admin'), wrap(async (req, res) => {
-  const { type_id, price_per_hour, effective_from } = req.body;
-  await withUser(req.user, (c) => c.query('CALL sp_set_price(?,?,?)', [type_id, price_per_hour, effective_from]));
-  res.status(201).json({ ok: true });
-}));
+    res.json(rows);
+  } catch (err) {
+    next(err);
+  }
+});
 
-export default r;
+// GET /pricing/:typeId/as-of/:date - Price as of a specific date using fn_hourly_price
+router.get('/:typeId/as-of/:date', requireRole('super_admin', 'billing', 'support'), async (req, res, next) => {
+  try {
+    const typeId = Number(req.params.typeId);
+    const date = req.params.date;
+
+    const row = await withDb(req, async (conn) => {
+      const [result] = await conn.execute(
+        'SELECT fn_hourly_price(?, ?) AS price_per_hour',
+        [typeId, date]
+      );
+      return result[0];
+    });
+
+    res.json(row);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /pricing - Set price from effective date (admin only)
+router.post('/', requireRole('super_admin'), validate({ body: setPriceSchema }), async (req, res, next) => {
+  try {
+    const { type_id, price_per_hour, effective_from } = req.body;
+
+    await withDb(req, async (conn) => {
+      await conn.execute(
+        'CALL sp_set_price(?, ?, ?)',
+        [type_id, price_per_hour, effective_from]
+      );
+    });
+
+    res.status(201).json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+export default router;

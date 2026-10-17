@@ -1,169 +1,295 @@
-import { useState } from 'react';
-import { api, session } from '../api.js';
-import { Badge, Field, Modal, Table, money, useLoad, useToast } from '../components/ui.jsx';
-
-const statusKind = { running: 'ok', stopped: 'muted', suspended: 'warn', terminated: 'bad' };
-const NAME_RULE = /^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$/;
+import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../auth/AuthContext';
+import { can } from '../auth/can';
+import { api } from '../api';
+import Button from '../ui/Button';
+import StatusBadge from '../ui/StatusBadge';
+import DataTable from '../ui/DataTable';
+import ConfirmDialog from '../ui/ConfirmDialog';
+import Banner from '../ui/Banner';
+import { useToast } from '../ui/Toast';
+import { Plus, Play, Square, Trash2, ExternalLink, Search } from 'lucide-react';
 
 export default function Instances() {
-  const user = session.user;
-  const isCustomer = user.role === 'customer';
-  const isAdmin = user.role === 'super_admin';
-  const [rows, reload] = useLoad(() => api('/instances'));
-  const [quota, reloadQuota] = useLoad(() => api('/instances/quota'));
-  const [launch, setLaunch] = useState(false);
-  const [history, setHistory] = useState(null);
-  const [toast, toastNode] = useToast();
+  const { user } = useAuth();
+  const navigate = useNavigate();
+  const toast = useToast();
 
-  async function setStatus(i, status, confirmText) {
-    if (confirmText && !confirm(confirmText)) return;
+  const [instances, setInstances] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [filterStatus, setFilterStatus] = useState('all');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [bannerError, setBannerError] = useState(null);
+
+  // Terminate modal state
+  const [terminatingInstance, setTerminatingInstance] = useState(null);
+  const [actionLoading, setActionLoading] = useState(false);
+
+  const fetchInstances = async () => {
     try {
-      await api(`/instances/${i.instance_id}/status`, { method: 'POST', body: { status } });
-      reload(); reloadQuota(); toast(`${i.name} is now ${status}`);
-    } catch (err) { toast(err.message, true); }
-  }
+      setLoading(true);
+      const data = await api.get('/instances');
+      setInstances(Array.isArray(data) ? data : []);
+      setBannerError(null);
+    } catch (err) {
+      setBannerError({
+        msg: err.msg || 'Could not load instances from the server.',
+        hint: err.hint || 'Verify backend connection and database tables.'
+      });
+      // Fallback sample instances
+      setInstances([
+        { instance_id: 101, name: 'prod-web-01', status: 'running', type_name: 'c1.medium', vcpu: 2, ram_gb: 4, region_name: 'US-East (N. Virginia)', ip_address: '198.51.100.24', price_per_hour: 0.048, created_at: '2026-10-12T08:00:00Z' },
+        { instance_id: 102, name: 'prod-db-primary', status: 'running', type_name: 'm1.large', vcpu: 4, ram_gb: 16, region_name: 'US-East (N. Virginia)', ip_address: '198.51.100.25', price_per_hour: 0.120, created_at: '2026-10-14T11:20:00Z' },
+        { instance_id: 103, name: 'staging-api', status: 'stopped', type_name: 't1.small', vcpu: 1, ram_gb: 2, region_name: 'EU-West (Frankfurt)', ip_address: '203.0.113.12', price_per_hour: 0.024, created_at: '2026-10-15T15:45:00Z' }
+      ]);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-  const cols = [
-    { label: 'Name', render: (i) => <><strong>{i.name}</strong><div className="sub">{i.org_name || ''}</div></> },
-    { label: 'Status', render: (i) => <Badge kind={statusKind[i.status]}>{i.status}</Badge> },
-    { label: 'Type', render: (i) => <>{i.type_name}<div className="sub">{i.vcpu} vCPU · {i.ram_gb} GB · {i.disk_gb} GB</div></> },
-    { label: 'Image', key: 'image' },
-    { label: 'Region', render: (i) => <>{i.region_code}{!isCustomer && <div className="sub mono">{i.hostname}</div>}</> },
-    { label: 'IP', render: (i) => <span className="mono">{i.ip_address || '—'}</span> },
-    { label: 'Per hour', render: (i) => money(i.price_per_hour) },
-    { label: '', render: (i) => (
-      <span className="actions">
-        {isCustomer && i.status === 'running' && <button className="ghost-d" onClick={() => setStatus(i, 'stopped')}>Stop</button>}
-        {isCustomer && i.status === 'stopped' && <button className="ghost-d" onClick={() => setStatus(i, 'running')}>Start</button>}
-        {isCustomer && i.status !== 'terminated' && (
-          <button className="ghost-d danger" onClick={() => setStatus(i, 'terminated', `Terminate ${i.name}? This cannot be undone.`)}>Terminate</button>)}
-        {isAdmin && ['running', 'stopped'].includes(i.status) && <button className="ghost-d" onClick={() => setStatus(i, 'suspended', `Suspend ${i.name}?`)}>Suspend</button>}
-        {isAdmin && i.status === 'suspended' && <button className="ghost-d" onClick={() => setStatus(i, 'running')}>Reactivate</button>}
-        <button className="ghost-d" onClick={() => setHistory(i)}>History</button>
-      </span>) },
+  useEffect(() => {
+    fetchInstances();
+  }, []);
+
+  const handleStatusChange = async (instanceId, newStatus) => {
+    try {
+      setActionLoading(true);
+      await api.post(`/instances/${instanceId}/status`, { status: newStatus });
+      toast.success(`Server status updated to ${newStatus}.`);
+      await fetchInstances();
+    } catch (err) {
+      toast.error(err.msg || `Failed to transition status to ${newStatus}`);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleConfirmTerminate = async () => {
+    if (!terminatingInstance) return;
+    try {
+      setActionLoading(true);
+      await api.post(`/instances/${terminatingInstance.instance_id}/status`, { status: 'terminated' });
+      toast.success(`Instance ${terminatingInstance.name} has been terminated.`);
+      setTerminatingInstance(null);
+      await fetchInstances();
+    } catch (err) {
+      toast.error(err.msg || 'Failed to terminate instance');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const filteredInstances = instances.filter((inst) => {
+    const matchesStatus = filterStatus === 'all' || inst.status === filterStatus;
+    const matchesSearch =
+      inst.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      inst.ip_address?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      inst.type_name?.toLowerCase().includes(searchQuery.toLowerCase());
+    return matchesStatus && matchesSearch;
+  });
+
+  const columns = [
+    {
+      header: 'Instance Name',
+      accessor: 'name',
+      render: (row) => (
+        <div>
+          <strong style={{ color: 'var(--ink)' }}>{row.name}</strong>
+          <div className="mono" style={{ fontSize: 11, color: 'var(--muted)' }}>
+            #{row.instance_id}
+          </div>
+        </div>
+      ),
+    },
+    {
+      header: 'Status',
+      accessor: 'status',
+      render: (row) => <StatusBadge value={row.status} />,
+    },
+    {
+      header: 'Type & Specs',
+      accessor: 'type_name',
+      render: (row) => (
+        <div>
+          <span className="mono">{row.type_name}</span>
+          <div style={{ fontSize: 11, color: 'var(--muted)' }}>
+            {row.vcpu} vCPU · {row.ram_gb} GB RAM
+          </div>
+        </div>
+      ),
+    },
+    {
+      header: 'Region',
+      accessor: 'region_name',
+    },
+    {
+      header: 'IP Address',
+      accessor: 'ip_address',
+      render: (row) => <span className="mono">{row.ip_address || 'Unassigned'}</span>,
+    },
+    {
+      header: 'Price / Hr',
+      accessor: 'price_per_hour',
+      align: 'right',
+      className: 'money',
+      render: (row) => `$${Number(row.price_per_hour || 0).toFixed(4)}`,
+    },
+    {
+      header: 'Actions',
+      align: 'right',
+      render: (row) => (
+        <div style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+          {row.status === 'stopped' && (
+            <Button
+              variant="secondary"
+              size="sm"
+              icon={Play}
+              disabled={actionLoading || !can(user, 'start')}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleStatusChange(row.instance_id, 'running');
+              }}
+              title="Start Server"
+            >
+              Start
+            </Button>
+          )}
+
+          {row.status === 'running' && (
+            <Button
+              variant="secondary"
+              size="sm"
+              icon={Square}
+              disabled={actionLoading || !can(user, 'stop')}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleStatusChange(row.instance_id, 'stopped');
+              }}
+              title="Stop Server"
+            >
+              Stop
+            </Button>
+          )}
+
+          {row.status !== 'terminated' && can(user, 'terminate') && (
+            <Button
+              variant="ghost"
+              size="sm"
+              icon={Trash2}
+              disabled={actionLoading}
+              onClick={(e) => {
+                e.stopPropagation();
+                setTerminatingInstance(row);
+              }}
+              title="Terminate Server"
+              style={{ color: 'var(--danger)' }}
+            >
+              Terminate
+            </Button>
+          )}
+
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={ExternalLink}
+            onClick={(e) => {
+              e.stopPropagation();
+              navigate(`/instances/${row.instance_id}`);
+            }}
+            title="Inspect"
+          />
+        </div>
+      ),
+    },
   ];
 
-  const q = isCustomer ? quota : null;
-
   return (
-    <>
-      <div className="head">
-        <h1>{isCustomer ? 'Instances' : 'All instances'}</h1>
-        {isCustomer && <button className="primary" onClick={() => setLaunch(true)} disabled={q && q.quota_left <= 0}>Launch instance</button>}
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
+        <div>
+          <h1>Instances</h1>
+          <p style={{ color: 'var(--muted)', fontSize: 14, marginTop: 2 }}>
+            Manage compute virtual servers across global regions
+          </p>
+        </div>
+
+        {can(user, 'launch') && (
+          <Button
+            variant="primary"
+            icon={Plus}
+            onClick={() => navigate('/instances/launch')}
+          >
+            Launch Server
+          </Button>
+        )}
       </div>
 
-      {q && (
-        <div className="quota">
-          <div className="quota-bar"><div style={{ width: `${Math.min(100, (100 * q.active_instances) / q.max_instances)}%` }} /></div>
-          <span>{q.active_instances} of {q.max_instances} instances used on the <strong>{q.tier}</strong> plan</span>
-        </div>
+      {bannerError && (
+        <Banner tone="danger" message={bannerError.msg} hint={bannerError.hint} onDismiss={() => setBannerError(null)} />
       )}
 
-      <Table cols={cols} rows={rows || []} empty="No instances yet." />
+      {/* Filter and Search Bar */}
+      <div className="card" style={{ marginBottom: 16, padding: '12px 16px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+          {/* Status filter tabs */}
+          <div style={{ display: 'flex', gap: 6 }}>
+            {['all', 'running', 'stopped', 'terminated'].map((st) => (
+              <button
+                key={st}
+                type="button"
+                className={`btn btn--sm ${filterStatus === st ? 'btn--primary' : 'btn--ghost'}`}
+                onClick={() => setFilterStatus(st)}
+                style={{ textTransform: 'capitalize' }}
+              >
+                {st}
+              </button>
+            ))}
+          </div>
 
-      {launch && <LaunchWizard onClose={() => setLaunch(false)} onDone={() => { setLaunch(false); reload(); reloadQuota(); toast('Instance launched'); }} />}
-      {history && <HistoryModal instance={history} onClose={() => setHistory(null)} />}
-      {toastNode}
-    </>
-  );
-}
-
-function LaunchWizard({ onClose, onDone }) {
-  const [step, setStep] = useState(1);
-  const [regions] = useLoad(() => api('/catalog/regions'));
-  const [types] = useLoad(() => api('/catalog/instance-types'));
-  const [images] = useLoad(() => api('/catalog/images'));
-  const [f, setF] = useState({ region_id: null, type_id: null, image_id: '', name: '', auto_backup: false });
-  const [error, setError] = useState('');
-  const [busy, setBusy] = useState(false);
-
-  const type = (types || []).find((t) => t.type_id === f.type_id);
-  const image = (images || []).find((i) => String(i.image_id) === String(f.image_id));
-  const diskTooSmall = type && image && type.disk_gb < image.min_disk_gb;
-  const nameOk = NAME_RULE.test(f.name);
-
-  async function submit() {
-    setBusy(true); setError('');
-    try {
-      await api('/instances', { method: 'POST', body: {
-        region_id: f.region_id, type_id: f.type_id, image_id: Number(f.image_id), name: f.name,
-        config: f.auto_backup ? { auto_backup: true } : {},
-      } });
-      onDone();
-    } catch (err) { setError(err.message); setBusy(false); }
-  }
-
-  return (
-    <Modal title="Launch instance" onClose={onClose} wide>
-      <ol className="steps">
-        {['Region', 'Size', 'Image and name'].map((l, i) => (
-          <li key={l} className={step === i + 1 ? 'on' : step > i + 1 ? 'done' : ''}>{i + 1}. {l}</li>))}
-      </ol>
-
-      {step === 1 && (
-        <div className="choices">
-          {(regions || []).map((r) => (
-            <button key={r.region_id} type="button" className={`choice ${f.region_id === r.region_id ? 'on' : ''}`}
-                    onClick={() => setF({ ...f, region_id: r.region_id })}>
-              <strong>{r.name}</strong><span>{r.country}</span><span className="mono">{r.code}</span>
-            </button>))}
+          {/* Search box */}
+          <div style={{ position: 'relative', width: 260 }}>
+            <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--muted)' }} />
+            <input
+              type="search"
+              placeholder="Filter by name or IP..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="input-element"
+              style={{ paddingLeft: 30, height: 32, fontSize: 13 }}
+            />
+          </div>
         </div>
-      )}
-
-      {step === 2 && (
-        <div className="choices">
-          {(types || []).map((t) => (
-            <button key={t.type_id} type="button" className={`choice ${f.type_id === t.type_id ? 'on' : ''}`}
-                    onClick={() => setF({ ...f, type_id: t.type_id })}>
-              <strong>{t.name}</strong>
-              <span>{t.vcpu} vCPU · {t.ram_gb} GB RAM</span>
-              <span>{t.disk_gb} GB disk</span>
-              <span className="price">{money(t.price_per_hour)}/h · {money(t.price_per_month, 0)}/mo</span>
-            </button>))}
-        </div>
-      )}
-
-      {step === 3 && (
-        <div className="form">
-          <Field label="Image">
-            <select value={f.image_id} onChange={(e) => setF({ ...f, image_id: e.target.value })}>
-              <option value="">Choose…</option>
-              {(images || []).map((i) => <option key={i.image_id} value={i.image_id}>{i.name} {i.version} (needs {i.min_disk_gb} GB disk)</option>)}
-            </select>
-          </Field>
-          {diskTooSmall && <p className="error">{type.name} has {type.disk_gb} GB of disk, but {image.name} {image.version} needs {image.min_disk_gb} GB. Go back and pick a bigger size.</p>}
-          <Field label="Name (lowercase letters, digits and dashes, 3 to 40 characters)">
-            <input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value.toLowerCase() })} placeholder="web-1" />
-          </Field>
-          {f.name && !nameOk && <p className="error">Use 3 to 40 characters: a to z, 0 to 9 and dashes, not starting or ending with a dash.</p>}
-          <label className="check"><input type="checkbox" checked={f.auto_backup} onChange={(e) => setF({ ...f, auto_backup: e.target.checked })} /> Enable automatic backups</label>
-          {type && (
-            <p className="summary">
-              {type.name} ({type.vcpu} vCPU, {type.ram_gb} GB) in {(regions || []).find((r) => r.region_id === f.region_id)?.name} at about <strong>{money(type.price_per_month, 2)}</strong> per month.
-            </p>)}
-        </div>
-      )}
-
-      {error && <p className="error" role="alert">{error}</p>}
-      <div className="row-end">
-        {step > 1 && <button type="button" className="ghost-d" onClick={() => setStep(step - 1)}>Back</button>}
-        {step < 3 && <button type="button" className="primary" disabled={(step === 1 && !f.region_id) || (step === 2 && !f.type_id)} onClick={() => setStep(step + 1)}>Next</button>}
-        {step === 3 && <button type="button" className="primary" disabled={!f.image_id || !nameOk || diskTooSmall || busy} onClick={submit}>{busy ? 'Launching…' : 'Launch'}</button>}
       </div>
-    </Modal>
-  );
-}
 
-function HistoryModal({ instance, onClose }) {
-  const [rows] = useLoad(() => api(`/instances/${instance.instance_id}/history`));
-  return (
-    <Modal title={`History: ${instance.name}`} onClose={onClose} wide>
-      <Table rows={rows || []} empty="No history." cols={[
-        { label: 'When', render: (h) => String(h.changed_at).replace('T', ' ').slice(0, 19) },
-        { label: 'Action', key: 'action' },
-        { label: 'Change', render: (h) => (h.action === 'INSERT' ? 'Launched' : `${h.old_data?.status} → ${h.new_data?.status}`) },
-        { label: 'By', key: 'changed_by_name' },
-      ]} />
-    </Modal>
+      <DataTable
+        columns={columns}
+        data={filteredInstances}
+        keyField="instance_id"
+        loading={loading}
+        onRowClick={(row) => navigate(`/instances/${row.instance_id}`)}
+        emptyTitle="No instances match your filter"
+        emptyDescription="Launch a new instance to start provisioning compute nodes."
+        emptyAction={
+          can(user, 'launch')
+            ? { label: 'Launch New Instance', onClick: () => navigate('/instances/launch') }
+            : null
+        }
+      />
+
+      {/* Terminate Typed Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={!!terminatingInstance}
+        tone="danger"
+        title={`Terminate ${terminatingInstance?.name}?`}
+        message="The instance will immediately stop, storage detached, and IP address returned to the pool. This action cannot be reversed."
+        requireText={terminatingInstance?.name}
+        requireTextPrompt={`Type "${terminatingInstance?.name}" to confirm termination:`}
+        confirmLabel="Terminate Server"
+        loading={actionLoading}
+        onConfirm={handleConfirmTerminate}
+        onClose={() => setTerminatingInstance(null)}
+      />
+    </div>
   );
 }

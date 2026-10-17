@@ -1,85 +1,263 @@
 import { Router } from 'express';
-import { pool, withUser } from '../db.js';
-import { allow, wrap } from '../middleware.js';
+import { withDb } from '../db.js';
+import { authenticate } from '../middleware/auth.js';
+import { requireRole } from '../middleware/rbac.js';
+import { validate } from '../middleware/validation.js';
+import {
+  idParamSchema,
+  createVolumeSchema,
+  attachVolumeSchema,
+  resizeVolumeSchema,
+  createSnapshotSchema,
+  restoreSnapshotSchema,
+} from '../validation/schemas.js';
 
-const r = Router();
-const customer = allow('customer');
-const isCustomer = (u) => u.role === 'customer';
+const router = Router();
 
-// Customers see only their organization; staff see everything (read-only)
-const scope = (u, params) => {
-  if (!isCustomer(u)) return '';
-  params.push(u.org_id || 0);
-  return 'WHERE org_id = ?';
-};
+router.use(authenticate);
 
-// ---- storage quota ----
-r.get('/quota', wrap(async (req, res) => {
-  const u = req.user;
-  if (isCustomer(u)) {
-    const [rows] = await pool.query('SELECT * FROM v_org_storage WHERE org_id = ?', [u.org_id || 0]);
-    return res.json(rows[0] || null);
+// GET /storage/quota - Storage quota info
+router.get('/quota', async (req, res, next) => {
+  try {
+    const u = req.user;
+    const isCustomer = u.role === 'customer';
+
+    const quota = await withDb(req, async (conn) => {
+      if (isCustomer) {
+        const [rows] = await conn.execute(
+          'SELECT * FROM v_org_storage WHERE org_id = ?',
+          [u.org_id || 0]
+        );
+        return rows[0] || null;
+      } else {
+        const [rows] = await conn.execute(
+          'SELECT * FROM v_org_storage ORDER BY org_name ASC'
+        );
+        return rows;
+      }
+    });
+
+    res.json(quota);
+  } catch (err) {
+    next(err);
   }
-  const [rows] = await pool.query('SELECT * FROM v_org_storage ORDER BY org_name');
-  res.json(rows);
-}));
+});
 
-// ---- volumes ----
-r.get('/volumes', wrap(async (req, res) => {
-  const params = [];
-  const [rows] = await pool.query(`SELECT * FROM v_volumes ${scope(req.user, params)} ORDER BY volume_id DESC`, params);
-  res.json(rows);
-}));
+// GET /storage/volumes - List volumes
+router.get('/volumes', async (req, res, next) => {
+  try {
+    const u = req.user;
+    const isCustomer = u.role === 'customer';
+    const params = isCustomer ? [u.org_id || 0] : [];
 
-r.post('/volumes', customer, wrap(async (req, res) => {
-  const u = req.user, b = req.body;
-  const [out] = await withUser(u, (c) =>
-    c.query('CALL sp_create_volume(?,?,?,?,?)', [u.org_id, b.region_id, b.name, b.size_gb, b.vol_type]));
-  res.status(201).json(out[0][0]);
-}));
+    const rows = await withDb(req, async (conn) => {
+      const sql = `SELECT * FROM v_volumes ${isCustomer ? 'WHERE org_id = ?' : ''} ORDER BY volume_id DESC`;
+      const [result] = await conn.execute(sql, params);
+      return result;
+    });
 
-r.post('/volumes/:id/attach', customer, wrap(async (req, res) => {
-  await withUser(req.user, (c) => c.query('CALL sp_attach_volume(?,?,?)', [req.params.id, req.body.instance_id, req.user.org_id]));
-  res.json({ ok: true });
-}));
+    res.json(rows);
+  } catch (err) {
+    next(err);
+  }
+});
 
-r.post('/volumes/:id/detach', customer, wrap(async (req, res) => {
-  await withUser(req.user, (c) => c.query('CALL sp_detach_volume(?,?)', [req.params.id, req.user.org_id]));
-  res.json({ ok: true });
-}));
+// POST /storage/volumes - Create volume
+router.post('/', requireRole('customer'), validate({ body: createVolumeSchema }), async (req, res, next) => {
+  try {
+    const u = req.user;
+    const { region_id, name, size_gb, vol_type } = req.body;
 
-r.post('/volumes/:id/resize', customer, wrap(async (req, res) => {
-  await withUser(req.user, (c) => c.query('CALL sp_resize_volume(?,?,?)', [req.params.id, req.user.org_id, req.body.size_gb]));
-  res.json({ ok: true });
-}));
+    const result = await withDb(req, async (conn) => {
+      const [out] = await conn.execute(
+        'CALL sp_create_volume(?, ?, ?, ?, ?)',
+        [u.org_id, region_id, name, size_gb, vol_type]
+      );
+      return out[0]?.[0];
+    });
 
-r.delete('/volumes/:id', customer, wrap(async (req, res) => {
-  await withUser(req.user, (c) => c.query('CALL sp_delete_volume(?,?)', [req.params.id, req.user.org_id]));
-  res.json({ ok: true });
-}));
+    res.status(201).json(result);
+  } catch (err) {
+    next(err);
+  }
+});
 
-// ---- snapshots ----
-r.get('/snapshots', wrap(async (req, res) => {
-  const params = [];
-  const [rows] = await pool.query(`SELECT * FROM v_snapshots ${scope(req.user, params)} ORDER BY snapshot_id DESC`, params);
-  res.json(rows);
-}));
+// POST /storage/volumes/:id/attach - Attach volume
+router.post(
+  '/volumes/:id/attach',
+  requireRole('customer'),
+  validate({ params: idParamSchema, body: attachVolumeSchema }),
+  async (req, res, next) => {
+    try {
+      const volumeId = Number(req.params.id);
+      const { instance_id } = req.body;
+      const u = req.user;
 
-r.post('/volumes/:id/snapshots', customer, wrap(async (req, res) => {
-  const [out] = await withUser(req.user, (c) =>
-    c.query('CALL sp_take_snapshot(?,?,?)', [req.params.id, req.user.org_id, req.body.name]));
-  res.status(201).json(out[0][0]);
-}));
+      await withDb(req, async (conn) => {
+        await conn.execute(
+          'CALL sp_attach_volume(?, ?, ?)',
+          [volumeId, instance_id, u.org_id]
+        );
+      });
 
-r.post('/snapshots/:id/restore', customer, wrap(async (req, res) => {
-  const [out] = await withUser(req.user, (c) =>
-    c.query('CALL sp_restore_snapshot(?,?,?)', [req.params.id, req.user.org_id, req.body.name]));
-  res.status(201).json(out[0][0]);
-}));
+      res.json({ ok: true });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
 
-r.delete('/snapshots/:id', customer, wrap(async (req, res) => {
-  await withUser(req.user, (c) => c.query('CALL sp_delete_snapshot(?,?)', [req.params.id, req.user.org_id]));
-  res.json({ ok: true });
-}));
+// POST /storage/volumes/:id/detach - Detach volume
+router.post('/volumes/:id/detach', requireRole('customer'), validate({ params: idParamSchema }), async (req, res, next) => {
+  try {
+    const volumeId = Number(req.params.id);
+    const u = req.user;
 
-export default r;
+    await withDb(req, async (conn) => {
+      await conn.execute(
+        'CALL sp_detach_volume(?, ?)',
+        [volumeId, u.org_id]
+      );
+    });
+
+    res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /storage/volumes/:id/resize - Expand volume
+router.post(
+  '/volumes/:id/resize',
+  requireRole('customer'),
+  validate({ params: idParamSchema, body: resizeVolumeSchema }),
+  async (req, res, next) => {
+    try {
+      const volumeId = Number(req.params.id);
+      const { size_gb } = req.body;
+      const u = req.user;
+
+      await withDb(req, async (conn) => {
+        await conn.execute(
+          'CALL sp_resize_volume(?, ?, ?)',
+          [volumeId, u.org_id, size_gb]
+        );
+      });
+
+      res.json({ ok: true });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+// DELETE /storage/volumes/:id - Delete volume
+router.delete('/volumes/:id', requireRole('customer'), validate({ params: idParamSchema }), async (req, res, next) => {
+  try {
+    const volumeId = Number(req.params.id);
+    const u = req.user;
+
+    await withDb(req, async (conn) => {
+      await conn.execute(
+        'CALL sp_delete_volume(?, ?)',
+        [volumeId, u.org_id]
+      );
+    });
+
+    res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /storage/snapshots - List snapshots
+router.get('/snapshots', async (req, res, next) => {
+  try {
+    const u = req.user;
+    const isCustomer = u.role === 'customer';
+    const params = isCustomer ? [u.org_id || 0] : [];
+
+    const rows = await withDb(req, async (conn) => {
+      const sql = `SELECT * FROM v_snapshots ${isCustomer ? 'WHERE org_id = ?' : ''} ORDER BY snapshot_id DESC`;
+      const [result] = await conn.execute(sql, params);
+      return result;
+    });
+
+    res.json(rows);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /storage/volumes/:id/snapshots - Take snapshot
+router.post(
+  '/volumes/:id/snapshots',
+  requireRole('customer'),
+  validate({ params: idParamSchema, body: createSnapshotSchema }),
+  async (req, res, next) => {
+    try {
+      const volumeId = Number(req.params.id);
+      const { name } = req.body;
+      const u = req.user;
+
+      const result = await withDb(req, async (conn) => {
+        const [out] = await conn.execute(
+          'CALL sp_take_snapshot(?, ?, ?)',
+          [volumeId, u.org_id, name]
+        );
+        return out[0]?.[0];
+      });
+
+      res.status(201).json(result);
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+// POST /storage/snapshots/:id/restore - Restore snapshot to new volume
+router.post(
+  '/snapshots/:id/restore',
+  requireRole('customer'),
+  validate({ params: idParamSchema, body: restoreSnapshotSchema }),
+  async (req, res, next) => {
+    try {
+      const snapshotId = Number(req.params.id);
+      const { name } = req.body;
+      const u = req.user;
+
+      const result = await withDb(req, async (conn) => {
+        const [out] = await conn.execute(
+          'CALL sp_restore_snapshot(?, ?, ?)',
+          [snapshotId, u.org_id, name]
+        );
+        return out[0]?.[0];
+      });
+
+      res.status(201).json(result);
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+// DELETE /storage/snapshots/:id - Delete snapshot
+router.delete('/snapshots/:id', requireRole('customer'), validate({ params: idParamSchema }), async (req, res, next) => {
+  try {
+    const snapshotId = Number(req.params.id);
+    const u = req.user;
+
+    await withDb(req, async (conn) => {
+      await conn.execute(
+        'CALL sp_delete_snapshot(?, ?)',
+        [snapshotId, u.org_id]
+      );
+    });
+
+    res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+export default router;

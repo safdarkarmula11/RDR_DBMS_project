@@ -1,89 +1,277 @@
 import { Router } from 'express';
-import { pool, withUser } from '../db.js';
-import { allow, wrap } from '../middleware.js';
+import { withDb } from '../db.js';
+import { authenticate } from '../middleware/auth.js';
+import { requireRole } from '../middleware/rbac.js';
+import { validate } from '../middleware/validation.js';
+import {
+  idParamSchema,
+  createHostSchema,
+  updateHostSchema,
+  createRegionSchema,
+  updateRegionSchema,
+  createInstanceTypeSchema,
+  updateInstanceTypeSchema,
+} from '../validation/schemas.js';
 
-const r = Router();
-const view = allow('super_admin', 'support');
-const manage = allow('super_admin');
+const router = Router();
 
-// ---- capacity: per-host view plus per-region totals with a grand-total row (ROLLUP) ----
-r.get('/capacity', view, wrap(async (_req, res) => {
-  const [hosts] = await pool.query('SELECT * FROM v_host_capacity ORDER BY region_name, hostname');
-  const [regions] = await pool.query(
-    `SELECT IF(GROUPING(r.name), 'All regions', r.name) AS region, GROUPING(r.name) AS is_total,
-            COUNT(*) AS hosts,
-            SUM(h.total_vcpu) AS total_vcpu, SUM(h.used_vcpu) AS used_vcpu,
-            SUM(h.total_ram_gb) AS total_ram_gb, SUM(h.used_ram_gb) AS used_ram_gb,
-            SUM(h.total_disk_gb) AS total_disk_gb, SUM(h.used_disk_gb) AS used_disk_gb,
-            ROUND(100 * SUM(h.used_vcpu) / SUM(h.total_vcpu), 1) AS cpu_pct,
-            ROUND(100 * SUM(h.used_ram_gb) / SUM(h.total_ram_gb), 1) AS ram_pct
-     FROM hosts h JOIN regions r ON r.region_id = h.region_id
-     WHERE h.status = 'active'
-     GROUP BY r.name WITH ROLLUP`);
-  res.json({ hosts, regions });
-}));
+router.use(authenticate);
 
-// ---- hosts ----
-r.post('/hosts', manage, wrap(async (req, res) => {
-  const b = req.body;
-  const out = await withUser(req.user, (c) => c.query(
-    'INSERT INTO hosts(region_id, hostname, total_vcpu, total_ram_gb, total_disk_gb) VALUES (?,?,?,?,?)',
-    [b.region_id, b.hostname, b.total_vcpu, b.total_ram_gb, b.total_disk_gb]));
-  res.status(201).json({ host_id: out[0].insertId });
-}));
+// View permission: super_admin, support, billing
+const canView = requireRole('super_admin', 'support', 'billing');
+// Admin mutation permission: super_admin only
+const canManage = requireRole('super_admin');
 
-r.put('/hosts/:id', manage, wrap(async (req, res) => {
-  const b = req.body;
-  await withUser(req.user, (c) => c.query(
-    'UPDATE hosts SET status = ?, total_vcpu = ?, total_ram_gb = ?, total_disk_gb = ? WHERE host_id = ?',
-    [b.status, b.total_vcpu, b.total_ram_gb, b.total_disk_gb, req.params.id]));
-  res.json({ ok: true });
-}));
+// GET /infra/capacity - Capacity dashboard (hosts + ROLLUP regions)
+router.get('/capacity', canView, async (req, res, next) => {
+  try {
+    const data = await withDb(req, async (conn) => {
+      const [hosts] = await conn.execute(
+        `SELECT * FROM v_host_capacity ORDER BY region_name ASC, hostname ASC`
+      );
 
-// ---- regions ----
-r.get('/regions', view, wrap(async (_req, res) => {
-  const [rows] = await pool.query(
-    `SELECT r.*, COUNT(h.host_id) AS hosts
-     FROM regions r LEFT JOIN hosts h ON h.region_id = r.region_id
-     GROUP BY r.region_id ORDER BY r.name`);
-  res.json(rows);
-}));
+      const [regions] = await conn.execute(
+        `SELECT IF(GROUPING(r.name), 'All regions', r.name) AS region,
+                GROUPING(r.name) AS is_total,
+                COUNT(*) AS hosts,
+                SUM(h.total_vcpu) AS total_vcpu, SUM(h.used_vcpu) AS used_vcpu,
+                SUM(h.total_ram_gb) AS total_ram_gb, SUM(h.used_ram_gb) AS used_ram_gb,
+                SUM(h.total_disk_gb) AS total_disk_gb, SUM(h.used_disk_gb) AS used_disk_gb,
+                ROUND(100 * SUM(h.used_vcpu) / SUM(h.total_vcpu), 1) AS cpu_pct,
+                ROUND(100 * SUM(h.used_ram_gb) / SUM(h.total_ram_gb), 1) AS ram_pct,
+                ROUND(100 * SUM(h.used_disk_gb) / SUM(h.total_disk_gb), 1) AS disk_pct
+         FROM hosts h
+         JOIN regions r ON r.region_id = h.region_id
+         WHERE h.status = 'active'
+         GROUP BY r.name WITH ROLLUP`
+      );
 
-r.post('/regions', manage, wrap(async (req, res) => {
-  const b = req.body;
-  const out = await withUser(req.user, (c) => c.query(
-    'INSERT INTO regions(code, name, country) VALUES (?,?,?)', [b.code, b.name, b.country]));
-  res.status(201).json({ region_id: out[0].insertId });
-}));
+      return { hosts, regions };
+    });
 
-r.put('/regions/:id', manage, wrap(async (req, res) => {
-  const b = req.body;
-  await withUser(req.user, (c) => c.query(
-    'UPDATE regions SET name = ?, country = ?, status = ? WHERE region_id = ?',
-    [b.name, b.country, b.status, req.params.id]));
-  res.json({ ok: true });
-}));
+    res.json(data);
+  } catch (err) {
+    next(err);
+  }
+});
 
-// ---- instance types (all, including inactive) ----
-r.get('/instance-types', allow('super_admin', 'billing', 'support'), wrap(async (_req, res) => {
-  const [rows] = await pool.query('SELECT * FROM v_current_pricing ORDER BY vcpu, ram_gb, name');
-  res.json(rows);
-}));
+// GET /infra/hosts - List hosts
+router.get('/hosts', canView, async (req, res, next) => {
+  try {
+    const hosts = await withDb(req, async (conn) => {
+      const [rows] = await conn.execute(
+        `SELECT h.*, r.name AS region_name, r.code AS region_code,
+                ROUND(100 * h.used_vcpu / h.total_vcpu, 1) AS cpu_pct,
+                ROUND(100 * h.used_ram_gb / h.total_ram_gb, 1) AS ram_pct,
+                ROUND(100 * h.used_disk_gb / h.total_disk_gb, 1) AS disk_pct
+         FROM hosts h
+         JOIN regions r ON r.region_id = h.region_id
+         ORDER BY r.name ASC, h.hostname ASC`
+      );
+      return rows;
+    });
 
-r.post('/instance-types', manage, wrap(async (req, res) => {
-  const b = req.body;
-  const out = await withUser(req.user, (c) => c.query(
-    'INSERT INTO instance_types(name, family, vcpu, ram_gb, disk_gb) VALUES (?,?,?,?,?)',
-    [b.name, b.family, b.vcpu, b.ram_gb, b.disk_gb]));
-  res.status(201).json({ type_id: out[0].insertId });
-}));
+    res.json(hosts);
+  } catch (err) {
+    next(err);
+  }
+});
 
-r.put('/instance-types/:id', manage, wrap(async (req, res) => {
-  const b = req.body;
-  await withUser(req.user, (c) => c.query(
-    'UPDATE instance_types SET name = ?, family = ?, vcpu = ?, ram_gb = ?, disk_gb = ?, active = ? WHERE type_id = ?',
-    [b.name, b.family, b.vcpu, b.ram_gb, b.disk_gb, b.active ? 1 : 0, req.params.id]));
-  res.json({ ok: true });
-}));
+// POST /infra/hosts - Add host
+router.post('/hosts', canManage, validate({ body: createHostSchema }), async (req, res, next) => {
+  try {
+    const { region_id, hostname, total_vcpu, total_ram_gb, total_disk_gb } = req.body;
+    const result = await withDb(req, async (conn) => {
+      const [out] = await conn.execute(
+        `INSERT INTO hosts(region_id, hostname, total_vcpu, total_ram_gb, total_disk_gb)
+         VALUES (?, ?, ?, ?, ?)`,
+        [region_id, hostname, total_vcpu, total_ram_gb, total_disk_gb]
+      );
+      return { host_id: out.insertId, hostname };
+    });
 
-export default r;
+    res.status(201).json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PUT /infra/hosts/:id - Update host
+router.put(
+  '/hosts/:id',
+  canManage,
+  validate({ params: idParamSchema, body: updateHostSchema }),
+  async (req, res, next) => {
+    try {
+      const hostId = Number(req.params.id);
+      const { status, total_vcpu, total_ram_gb, total_disk_gb } = req.body;
+
+      const updates = [];
+      const params = [];
+      if (status) { updates.push('status = ?'); params.push(status); }
+      if (total_vcpu) { updates.push('total_vcpu = ?'); params.push(total_vcpu); }
+      if (total_ram_gb) { updates.push('total_ram_gb = ?'); params.push(total_ram_gb); }
+      if (total_disk_gb) { updates.push('total_disk_gb = ?'); params.push(total_disk_gb); }
+
+      if (updates.length > 0) {
+        params.push(hostId);
+        await withDb(req, async (conn) => {
+          await conn.execute(
+            `UPDATE hosts SET ${updates.join(', ')} WHERE host_id = ?`,
+            params
+          );
+        });
+      }
+
+      res.json({ ok: true });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+// GET /infra/regions - List regions with host counts
+router.get('/regions', canView, async (req, res, next) => {
+  try {
+    const rows = await withDb(req, async (conn) => {
+      const [result] = await conn.execute(
+        `SELECT r.*, COUNT(h.host_id) AS total_hosts,
+                COUNT(CASE WHEN h.status = 'active' THEN 1 END) AS active_hosts
+         FROM regions r
+         LEFT JOIN hosts h ON h.region_id = r.region_id
+         GROUP BY r.region_id
+         ORDER BY r.name ASC`
+      );
+      return result;
+    });
+
+    res.json(rows);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /infra/regions - Create region
+router.post('/regions', canManage, validate({ body: createRegionSchema }), async (req, res, next) => {
+  try {
+    const { code, name, country } = req.body;
+    const result = await withDb(req, async (conn) => {
+      const [out] = await conn.execute(
+        `INSERT INTO regions(code, name, country) VALUES (?, ?, ?)`,
+        [code, name, country]
+      );
+      return { region_id: out.insertId, code, name };
+    });
+
+    res.status(201).json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PUT /infra/regions/:id - Update region
+router.put(
+  '/regions/:id',
+  canManage,
+  validate({ params: idParamSchema, body: updateRegionSchema }),
+  async (req, res, next) => {
+    try {
+      const regionId = Number(req.params.id);
+      const { name, country, status } = req.body;
+
+      const updates = [];
+      const params = [];
+      if (name) { updates.push('name = ?'); params.push(name); }
+      if (country) { updates.push('country = ?'); params.push(country); }
+      if (status) { updates.push('status = ?'); params.push(status); }
+
+      if (updates.length > 0) {
+        params.push(regionId);
+        await withDb(req, async (conn) => {
+          await conn.execute(
+            `UPDATE regions SET ${updates.join(', ')} WHERE region_id = ?`,
+            params
+          );
+        });
+      }
+
+      res.json({ ok: true });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+// GET /infra/instance-types - List all types
+router.get('/instance-types', canView, async (req, res, next) => {
+  try {
+    const types = await withDb(req, async (conn) => {
+      const [rows] = await conn.execute(
+        `SELECT t.*, fn_hourly_price(t.type_id, CURRENT_DATE) AS price_per_hour
+         FROM instance_types t
+         ORDER BY t.vcpu ASC, t.ram_gb ASC, t.name ASC`
+      );
+      return rows;
+    });
+
+    res.json(types);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /infra/instance-types - Create type
+router.post('/instance-types', canManage, validate({ body: createInstanceTypeSchema }), async (req, res, next) => {
+  try {
+    const { name, family, vcpu, ram_gb, disk_gb } = req.body;
+    const result = await withDb(req, async (conn) => {
+      const [out] = await conn.execute(
+        `INSERT INTO instance_types(name, family, vcpu, ram_gb, disk_gb) VALUES (?, ?, ?, ?, ?)`,
+        [name, family, vcpu, ram_gb, disk_gb]
+      );
+      return { type_id: out.insertId, name };
+    });
+
+    res.status(201).json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PUT /infra/instance-types/:id - Update type
+router.put(
+  '/instance-types/:id',
+  canManage,
+  validate({ params: idParamSchema, body: updateInstanceTypeSchema }),
+  async (req, res, next) => {
+    try {
+      const typeId = Number(req.params.id);
+      const { name, family, vcpu, ram_gb, disk_gb, active } = req.body;
+
+      const updates = [];
+      const params = [];
+      if (name) { updates.push('name = ?'); params.push(name); }
+      if (family) { updates.push('family = ?'); params.push(family); }
+      if (vcpu) { updates.push('vcpu = ?'); params.push(vcpu); }
+      if (ram_gb) { updates.push('ram_gb = ?'); params.push(ram_gb); }
+      if (disk_gb) { updates.push('disk_gb = ?'); params.push(disk_gb); }
+      if (active !== undefined) { updates.push('active = ?'); params.push(active ? 1 : 0); }
+
+      if (updates.length > 0) {
+        params.push(typeId);
+        await withDb(req, async (conn) => {
+          await conn.execute(
+            `UPDATE instance_types SET ${updates.join(', ')} WHERE type_id = ?`,
+            params
+          );
+        });
+      }
+
+      res.json({ ok: true });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+export default router;
