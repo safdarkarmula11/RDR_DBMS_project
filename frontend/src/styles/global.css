@@ -111,6 +111,8 @@ a:hover {
 .col-6 { grid-column: span 6; }
 .col-4 { grid-column: span 4; }
 .col-3 { grid-column: span 3; }
+.col-7 { grid-column: span 7; }
+.col-5 { grid-column: span 5; }
 
 @media (max-width: 1024px) {
   .col-8, .col-6, .col-4, .col-3 {
