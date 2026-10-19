@@ -1,5 +1,5 @@
 -- ============================================================
--- NimbusHost | 12_seed.sql
+-- NimbusHost | 07_seed.sql
 -- Reference data + demo organizations (no demo instances).
 -- Run with: npm run db:setup   then: npm run seed-users
 -- ============================================================

@@ -56,7 +56,7 @@ async function doRefreshToken() {
   }
 }
 
-export async function request(path, options = {}, attempt = 1) {
+export async function request(path, options = {}, attempt = 1, retriedAfterRefresh = false) {
   const url = path.startsWith('http') ? path : (path.startsWith('/api') ? path : `/api${path}`);
   const headers = {
     'Content-Type': 'application/json',
@@ -88,6 +88,19 @@ export async function request(path, options = {}, attempt = 1) {
 
   // Intercept 401: Token expired, attempt refresh
   if (res.status === 401 && !path.includes('/auth/login') && !path.includes('/auth/refresh')) {
+    // Already retried once with a fresh token and still 401: the token is fine,
+    // the server is refusing this account (for example no active organization).
+    // Report that error instead of refreshing again and again.
+    if (retriedAfterRefresh) {
+      const body = await res.json().catch(() => ({}));
+      throw {
+        status: 401,
+        code: body?.code || 'UNAUTHORIZED',
+        msg: body?.msg || body?.error || 'Not authorized for this request.',
+        hint: body?.hint || null,
+        details: body,
+      };
+    }
     try {
       if (!refreshPromise) {
         refreshPromise = doRefreshToken();
@@ -101,7 +114,7 @@ export async function request(path, options = {}, attempt = 1) {
           ...options.headers,
           Authorization: `Bearer ${newToken}`,
         },
-      }, attempt);
+      }, attempt, true);
     } catch {
       // Refresh failed; notify app and reject
       if (window.location.pathname !== '/login') {

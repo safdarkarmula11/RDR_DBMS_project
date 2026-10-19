@@ -334,11 +334,13 @@ const handleInvoiceGeneration = async (req, res, next) => {
           throw err;
         }
 
-        const inv = await generateInvoice(conn, {
+        const created = await generateInvoice(conn, {
           orgId: targetOrg,
           periodStart: period_start,
           periodEnd: period_end,
         });
+        const [invRows] = await conn.execute('SELECT * FROM invoices WHERE invoice_id = ?', [created?.invoice_id]);
+        const inv = invRows[0] || created || {};
 
         return {
           invoices_generated: 1,
