@@ -66,7 +66,7 @@ export default function InvoiceDetail() {
       setActionLoading(true);
       const txnRef = `TXN-${Math.random().toString(36).substring(2, 10).toUpperCase()}`;
       await api.post(`/invoices/${id}/pay`, {
-        amount: Number(invoice.total),
+        amount: Number(invoice.balance ?? invoice.total),
         method: paymentMethod,
         txn_ref: txnRef
       });
@@ -304,4 +304,3 @@ export default function InvoiceDetail() {
     </div>
   );
 }
-

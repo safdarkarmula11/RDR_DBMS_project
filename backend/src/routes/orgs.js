@@ -93,13 +93,23 @@ router.post('/members', validate({ body: addMemberSchema }), async (req, res, ne
     const finalRole = member_role || role || 'member';
 
     const result = await withDb(req, async (conn) => {
+      // Only an existing customer account that is not already in another
+      // organization can be added. Every other case returns the same answer,
+      // so this endpoint cannot be used to find out which emails exist.
       const [users] = await conn.execute(
-        'SELECT user_id FROM users WHERE email = ?',
-        [email]
+        `SELECT u.user_id
+           FROM users u
+          WHERE u.email = ?
+            AND u.system_role = 'customer'
+            AND NOT EXISTS (
+              SELECT 1 FROM org_members om
+               WHERE om.user_id = u.user_id AND om.org_id <> ?
+            )`,
+        [email, orgId]
       );
       const user = users[0];
       if (!user) {
-        const err = new Error('No user found with that email address');
+        const err = new Error('No eligible account found for that email. The person must register first and must not belong to another organization.');
         err.statusCode = 404;
         err.code = 'NOT_FOUND';
         throw err;

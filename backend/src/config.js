@@ -3,6 +3,9 @@ import { z } from 'zod';
 
 dotenv.config();
 
+// Development-only fallback. Production refuses to start with it (see below).
+const DEFAULT_JWT_SECRET = 'nimbushost_production_super_secure_jwt_secret_key_2026';
+
 const envSchema = z.object({
   PORT: z.coerce.number().default(5000),
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
@@ -25,7 +28,7 @@ const envSchema = z.object({
   DB_CUSTOMER_PASSWORD: z.string().optional(),
 
   // JWT configuration
-  JWT_SECRET: z.string().min(16).default('nimbushost_production_super_secure_jwt_secret_key_2026'),
+  JWT_SECRET: z.string().min(16).default(DEFAULT_JWT_SECRET),
   JWT_EXPIRES_IN: z.string().default('15m'),
   REFRESH_TOKEN_EXPIRES_DAYS: z.coerce.number().default(7),
 
@@ -40,6 +43,11 @@ if (!parsedEnv.success) {
 }
 
 const raw = parsedEnv.data;
+
+if (raw.NODE_ENV === 'production' && raw.JWT_SECRET === DEFAULT_JWT_SECRET) {
+  console.error('Refusing to start: set a private JWT_SECRET in the environment for production.');
+  process.exit(1);
+}
 
 export const config = {
   port: raw.PORT,

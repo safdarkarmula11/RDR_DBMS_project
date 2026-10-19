@@ -147,6 +147,15 @@ const handleStatusUpdate = async (req, res, next) => {
     const u = req.user;
     const { status } = req.body;
 
+    if (u.role !== 'customer') {
+      if (!['super_admin', 'support'].includes(u.role)) {
+        return res.status(403).json({ code: 'FORBIDDEN', msg: 'Your role cannot change instance status' });
+      }
+      if (status === 'terminated' && u.role !== 'super_admin') {
+        return res.status(403).json({ code: 'FORBIDDEN', msg: 'Only a super admin can terminate instances as staff' });
+      }
+    }
+
     if (u.role === 'customer') {
       if (!['running', 'stopped', 'terminated'].includes(status)) {
         return res.status(403).json({ code: 'FORBIDDEN', msg: 'Customers can only start, stop, or terminate instances' });
@@ -192,6 +201,9 @@ router.post(
       if (u.role === 'customer' && u.member_role !== 'owner') {
         return res.status(403).json({ code: 'FORBIDDEN', msg: 'Only the organization owner can resize instances' });
       }
+      if (u.role !== 'customer' && u.role !== 'super_admin') {
+        return res.status(403).json({ code: 'FORBIDDEN', msg: 'Only a super admin can resize instances as staff' });
+      }
 
       const result = await withDb(req, async (conn) => {
         const [out] = await conn.execute(
@@ -216,6 +228,9 @@ router.delete('/:id', validate({ params: idParamSchema }), async (req, res, next
 
     if (u.role === 'customer' && u.member_role !== 'owner') {
       return res.status(403).json({ code: 'FORBIDDEN', msg: 'Only the organization owner can terminate instances' });
+    }
+    if (u.role !== 'customer' && u.role !== 'super_admin') {
+      return res.status(403).json({ code: 'FORBIDDEN', msg: 'Only a super admin can terminate instances as staff' });
     }
 
     await withDb(req, async (conn) => {

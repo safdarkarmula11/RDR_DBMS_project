@@ -1,5 +1,7 @@
--- Phase 1 Acceptance Tests - run with: mysql -u deku -p1234 nimbushost --force < database/tests/phase1_tests.sql
--- --force continues after errors so we see all results
+-- Phase 1 Acceptance Tests
+-- WARNING: this script DELETES ALL DATA (including users) before it runs. Use it on a throw-away database only.
+-- Run from the project root:  mysql -u root -p nimbushost --force < database/tests/phase1_tests.sql
+-- --force continues after errors so every result is shown. Afterwards run: npm run seed-users (and re-apply 07_seed.sql if needed).
 
 -- Reset database first
 SET FOREIGN_KEY_CHECKS = 0;
@@ -122,4 +124,3 @@ INSERT INTO ip_addresses(region_id, ip_address) VALUES (1, '10.0.0.1');
 INSERT INTO ip_addresses(region_id, ip_address) VALUES (1, '10.0.0.1');
 
 SELECT '=== ALL PHASE 1 TESTS COMPLETE ===' AS result;
-

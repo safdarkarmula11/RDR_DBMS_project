@@ -362,19 +362,28 @@ BEGIN
   DECLARE v_cur_inst INT;
   DECLARE v_cur_type INT;
   DECLARE v_cur_name VARCHAR(40);
+  DECLARE v_cur_price DECIMAL(8,4);
   DECLARE v_cur_qty DECIMAL(10,3);
   DECLARE v_unit_price DECIMAL(8,4);
   DECLARE v_item_amount DECIMAL(12,2);
   DECLARE v_done INT DEFAULT 0;
 
+  -- Only compute hours are billed; each row is priced with the price version
+  -- that was valid on the day the usage was recorded.
   DECLARE cur_usage CURSOR FOR
-    SELECT u.instance_id, u.type_id, i.name, SUM(u.quantity) AS total_qty
+    SELECT u.instance_id, u.type_id, i.name, pr.price_per_hour, SUM(u.quantity) AS total_qty
     FROM usage_records u
     JOIN instances i ON i.instance_id = u.instance_id
+    LEFT JOIN pricing pr
+           ON pr.type_id = u.type_id
+          AND DATE(u.recorded_at) >= pr.valid_from
+          AND (pr.valid_to IS NULL OR DATE(u.recorded_at) <= pr.valid_to)
     WHERE u.org_id = p_org
+      AND u.metric = 'cpu_hour'
       AND u.recorded_at >= p_period_start
       AND u.recorded_at < DATE_ADD(p_period_end, INTERVAL 1 DAY)
-    GROUP BY u.instance_id, u.type_id, i.name;
+    GROUP BY u.instance_id, u.type_id, i.name, pr.price_per_hour
+    ORDER BY u.instance_id, pr.price_per_hour;
 
   DECLARE CONTINUE HANDLER FOR NOT FOUND SET v_done = 1;
   DECLARE EXIT HANDLER FOR SQLEXCEPTION
@@ -399,23 +408,29 @@ BEGIN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Organization not found';
   END IF;
 
-  IF EXISTS (SELECT 1 FROM invoices WHERE org_id = p_org AND period_start = p_period_start) THEN
+  -- Reject any non-void invoice whose period overlaps the requested one
+  IF EXISTS (
+    SELECT 1 FROM invoices
+    WHERE org_id = p_org
+      AND status <> 'void'
+      AND period_start <= p_period_end
+      AND period_end >= p_period_start
+  ) THEN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Invoice already exists for this period';
   END IF;
 
-  -- Create initial draft invoice
   INSERT INTO invoices(org_id, period_start, period_end, subtotal, tax, credit_applied, total, status)
   VALUES (p_org, p_period_start, p_period_end, 0.00, 0.00, 0.00, 0.00, 'draft');
   SET v_invoice_id = LAST_INSERT_ID();
 
   OPEN cur_usage;
   usage_loop: LOOP
-    FETCH cur_usage INTO v_cur_inst, v_cur_type, v_cur_name, v_cur_qty;
+    FETCH cur_usage INTO v_cur_inst, v_cur_type, v_cur_name, v_cur_price, v_cur_qty;
     IF v_done = 1 THEN
       LEAVE usage_loop;
     END IF;
 
-    SET v_unit_price = COALESCE(fn_hourly_price(v_cur_type, p_period_end), 0.0000);
+    SET v_unit_price = COALESCE(v_cur_price, 0.0000);
     SET v_item_amount = ROUND(v_cur_qty * v_unit_price, 2);
 
     INSERT INTO invoice_items(invoice_id, instance_id, description, quantity, unit_price, amount)
@@ -450,6 +465,12 @@ BEGIN
       issued_at = CURRENT_TIMESTAMP,
       due_date = DATE_ADD(CURRENT_DATE, INTERVAL 30 DAY)
   WHERE invoice_id = v_invoice_id;
+
+  -- Nothing to pay (no usage, or fully covered by credit): close it now so it
+  -- can never turn overdue and trigger a suspension.
+  IF v_total <= 0 THEN
+    UPDATE invoices SET status = 'paid' WHERE invoice_id = v_invoice_id;
+  END IF;
 
   COMMIT;
 
@@ -514,7 +535,8 @@ proc: BEGIN
   IF p_idempotency_key IS NOT NULL AND p_idempotency_key <> '' THEN
     SELECT payment_id INTO v_existing_payment
     FROM payments
-    WHERE idempotency_key = p_idempotency_key;
+    WHERE idempotency_key = p_idempotency_key
+      AND invoice_id = p_invoice;
 
     IF v_existing_payment IS NOT NULL THEN
       SELECT v_existing_payment AS payment_id;
@@ -551,6 +573,17 @@ proc: BEGIN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Payment amount exceeds outstanding invoice balance';
   END IF;
 
+  -- Paying from credit must actually spend the credit
+  IF p_method = 'credit' THEN
+    UPDATE organizations
+    SET credit_balance = credit_balance - p_amount
+    WHERE org_id = v_org_id AND credit_balance >= p_amount;
+
+    IF ROW_COUNT() = 0 THEN
+      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Insufficient credit balance';
+    END IF;
+  END IF;
+
   INSERT INTO payments(invoice_id, amount, method, txn_ref, idempotency_key)
   VALUES (p_invoice, p_amount, p_method, p_txn_ref, p_idempotency_key);
   SET v_payment_id = LAST_INSERT_ID();
@@ -566,7 +599,7 @@ proc: BEGIN
   COMMIT;
 
   SELECT v_payment_id AS payment_id;
-END proc$$
+END$$
 
 -- 10. Volume operations
 DROP PROCEDURE IF EXISTS sp_create_volume$$
