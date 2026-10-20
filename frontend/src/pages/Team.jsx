@@ -67,7 +67,7 @@ export default function Team() {
     try {
       setActionLoading(true);
       await api.post('/orgs/members', inviteForm);
-      toast.success(`Invitation sent to ${inviteForm.email}.`);
+      toast.success(`${inviteForm.email} was added to your organization.`);
       setShowInviteModal(false);
       setInviteForm({ email: '', fullName: '', role: 'member' });
       await fetchData();
@@ -285,7 +285,7 @@ export default function Team() {
               </div>
               <div className="modal-footer">
                 <Button variant="ghost" onClick={() => setShowInviteModal(false)}>Cancel</Button>
-                <Button variant="primary" type="submit" loading={actionLoading}>Send Invitation</Button>
+                <Button variant="primary" type="submit" loading={actionLoading}>Add Member</Button>
               </div>
             </form>
           </div>

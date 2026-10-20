@@ -22,12 +22,7 @@ export default function Invoices() {
       setBannerError(null);
     } catch (err) {
       setBannerError({ msg: 'Could not load invoices from API.', hint: err.msg });
-      // Fallback demo data
-      setInvoices([
-        { invoice_id: 1001, period_start: '2026-09-01', period_end: '2026-09-30', subtotal: 124.50, tax: 12.45, credit_applied: 0.00, total: 136.95, status: 'paid', due_date: '2026-10-15', issued_at: '2026-10-01' },
-        { invoice_id: 1002, period_start: '2026-10-01', period_end: '2026-10-31', subtotal: 182.20, tax: 18.22, credit_applied: 20.00, total: 180.42, status: 'issued', due_date: '2026-11-15', issued_at: '2026-11-01' },
-        { invoice_id: 998, period_start: '2026-08-01', period_end: '2026-08-31', subtotal: 95.00, tax: 9.50, credit_applied: 0.00, total: 104.50, status: 'paid', due_date: '2026-09-15', issued_at: '2026-09-01' },
-      ]);
+      setInvoices([]);
     } finally {
       setLoading(false);
     }

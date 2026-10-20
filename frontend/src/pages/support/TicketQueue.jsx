@@ -7,6 +7,7 @@ import DataTable from '../../ui/DataTable';
 import Drawer from '../../ui/Drawer';
 import { Inbox, AlertOctagon, UserCheck, ShieldAlert, Send } from 'lucide-react';
 import { useToast } from '../../ui/Toast';
+import Banner from '../../ui/Banner';
 
 export default function TicketQueue() {
   const { user } = useAuth();
@@ -14,6 +15,7 @@ export default function TicketQueue() {
 
   const [queue, setQueue] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
   const [selectedTicket, setSelectedTicket] = useState(null);
   const [threadMessages, setThreadMessages] = useState([]);
   const [replyText, setReplyText] = useState('');
@@ -24,14 +26,10 @@ export default function TicketQueue() {
       setLoading(true);
       const data = await api.get('/support/queue');
 
-      const fallback = [
-        { ticket_id: 104, subject: 'Production Database Kernel Panic on Host-01', priority: 'critical', org_name: 'Stark Technologies', status: 'open', assigned_to_name: null, hours_left: 0.8, created_at: '2026-10-17 09:10:00' },
-        { ticket_id: 101, subject: 'Cannot mount SSD volume to staging instance', priority: 'high', org_name: 'Acme Enterprises', status: 'in_progress', assigned_to_name: 'Agent Dave', hours_left: 2.5, created_at: '2026-10-16 14:20:00' },
-        { ticket_id: 102, subject: 'Reverse DNS PTR record request for elastic IP', priority: 'medium', org_name: 'Wayne Logistics', status: 'open', assigned_to_name: null, hours_left: 14.2, created_at: '2026-10-16 11:15:00' },
-        { ticket_id: 99, subject: 'Billing invoice discrepancy inquiry', priority: 'low', org_name: 'Cyberdyne Systems', status: 'open', assigned_to_name: null, hours_left: 42.0, created_at: '2026-10-15 16:00:00' },
-      ];
-
-      setQueue(Array.isArray(data) && data.length ? data : fallback);
+      setQueue(Array.isArray(data) ? data : []);
+      setLoadError(null);
+    } catch (err) {
+      setLoadError({ msg: 'Could not load the ticket queue.', hint: err.msg });
     } finally {
       setLoading(false);
     }
@@ -59,10 +57,9 @@ export default function TicketQueue() {
     try {
       const msgs = await api.get(`/tickets/${ticket.ticket_id}/messages`);
       setThreadMessages(Array.isArray(msgs) ? msgs : []);
-    } catch {
-      setThreadMessages([
-        { message_id: 1, sender_name: 'Customer Admin', is_staff: false, body: 'Critical incident: server is unresponsive following kernel update.', created_at: ticket.created_at }
-      ]);
+    } catch (err) {
+      setThreadMessages([]);
+      toast.error(err.msg || 'Could not load the conversation.');
     }
   };
 
@@ -93,6 +90,7 @@ export default function TicketQueue() {
 
   return (
     <div>
+      {loadError && <Banner tone="danger" message={loadError.msg} hint={loadError.hint} />}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
         <div>
           <h1>Support Ticket Queue (SLA Prioritized)</h1>

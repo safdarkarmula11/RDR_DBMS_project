@@ -18,6 +18,7 @@ import {
   Cpu,
   HardDrive
 } from 'lucide-react';
+import Banner from '../ui/Banner';
 import {
   AreaChart,
   Area,
@@ -33,6 +34,7 @@ export default function Dashboard() {
   const navigate = useNavigate();
 
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
   const [instances, setInstances] = useState([]);
   const [quota, setQuota] = useState(null);
   const [costHistory, setCostHistory] = useState([]);
@@ -51,52 +53,42 @@ export default function Dashboard() {
       try {
         setLoading(true);
         // Concurrent fetches for dashboard
-        const [instRes, quotaRes, usageRes, ticketRes] = await Promise.allSettled([
+        const [instRes, quotaRes, invRes, ticketRes] = await Promise.allSettled([
           api.get('/instances'),
           api.get('/instances/quota'),
-          api.get('/usage'),
+          api.get('/invoices'),
           api.get('/tickets')
         ]);
 
         if (!mounted) return;
 
-        const instList = instRes.status === 'fulfilled' && Array.isArray(instRes.value) ? instRes.value : [
-          { instance_id: 101, name: 'prod-web-01', status: 'running', type_name: 'c1.medium', vcpu: 2, ram_gb: 4, region_name: 'US-East (N. Virginia)', ip_address: '198.51.100.24', price_per_hour: 0.048 },
-          { instance_id: 102, name: 'prod-db-primary', status: 'running', type_name: 'm1.large', vcpu: 4, ram_gb: 16, region_name: 'US-East (N. Virginia)', ip_address: '198.51.100.25', price_per_hour: 0.120 },
-          { instance_id: 103, name: 'staging-api', status: 'stopped', type_name: 't1.small', vcpu: 1, ram_gb: 2, region_name: 'EU-West (Frankfurt)', ip_address: '203.0.113.12', price_per_hour: 0.024 }
-        ];
+        const instList = instRes.status === 'fulfilled' && Array.isArray(instRes.value) ? instRes.value : [];
+        const invList = invRes.status === 'fulfilled' && Array.isArray(invRes.value) ? invRes.value : [];
+        const tickList = ticketRes.status === 'fulfilled' && Array.isArray(ticketRes.value) ? ticketRes.value : [];
+
+        const failed = [instRes, quotaRes, invRes, ticketRes].find((r) => r.status === 'rejected');
+        setLoadError(failed ? { msg: 'Some dashboard data could not be loaded.', hint: failed.reason?.msg } : null);
 
         setInstances(instList);
-
-        const quotaData = quotaRes.status === 'fulfilled' && quotaRes.value ? quotaRes.value : {
-          used_instances: instList.filter(i => i.status !== 'terminated').length,
-          max_instances: 5,
-          used_storage_gb: 85,
-          max_storage_gb: 250,
-          tier_name: 'Developer'
-        };
-        setQuota(quotaData);
+        setQuota(quotaRes.status === 'fulfilled' && quotaRes.value ? quotaRes.value : null);
 
         const runningCount = instList.filter(i => i.status === 'running').length;
         const totalHourly = instList.filter(i => i.status === 'running').reduce((acc, curr) => acc + Number(curr.price_per_hour || 0), 0);
         const estimatedMonthly = (totalHourly * 730).toFixed(2);
 
-        // Usage trend data
-        const trend = [
-          { date: 'May', cost: 42.50 },
-          { date: 'Jun', cost: 58.20 },
-          { date: 'Jul', cost: 74.00 },
-          { date: 'Aug', cost: 89.15 },
-          { date: 'Sep', cost: 110.40 },
-          { date: 'Oct', cost: Number(estimatedMonthly) || 124.80 }
-        ];
+        // Cost history = real invoice totals, oldest first (last 6)
+        const trend = invList
+          .filter((i) => i.status !== 'void')
+          .map((i) => ({ date: String(i.period_start).slice(0, 7), cost: Number(i.total) }))
+          .sort((x, y) => x.date.localeCompare(y.date))
+          .slice(-6);
         setCostHistory(trend);
 
         setKpis({
           runningCount,
           monthlyCost: estimatedMonthly,
-          creditBalance: user?.credit_balance ?? 150.00,
-          openTickets: 1
+          creditBalance: user?.credit_balance ?? 0,
+          openTickets: tickList.filter((t) => ['open', 'in_progress'].includes(t.status)).length
         });
       } catch (err) {
         console.error('Error loading dashboard:', err);
@@ -110,19 +102,20 @@ export default function Dashboard() {
   }, [user]);
 
   // Quota calculation for circular ring
-  const usedInst = quota?.used_instances ?? 3;
-  const maxInst = quota?.max_instances ?? 5;
+  const usedInst = quota?.used_instances ?? 0;
+  const maxInst = quota?.max_instances ?? 0;
   const instPct = Math.min(100, Math.round((usedInst / (maxInst || 1)) * 100));
   const ringTone = instPct >= 95 ? 'var(--danger)' : instPct >= 80 ? 'var(--warn)' : 'var(--brand)';
 
   return (
     <div>
+      {loadError && <Banner tone="danger" message={loadError.msg} hint={loadError.hint} />}
       {/* Top Welcome & Actions Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24, flexWrap: 'wrap', gap: 12 }}>
         <div>
           <h1>Customer Cloud Console</h1>
           <p style={{ color: 'var(--muted)', fontSize: 14, marginTop: 2 }}>
-            Organization: <strong>{user?.org_name || 'Acme Workspace'}</strong>
+            Organization: <strong>{user?.org_name || 'Your organization'}</strong>
           </p>
         </div>
         <div style={{ display: 'flex', gap: 10 }}>

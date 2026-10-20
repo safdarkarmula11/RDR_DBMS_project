@@ -32,14 +32,7 @@ export default function Pricing() {
       setLoading(true);
       const data = await api.get('/pricing');
 
-      const fallback = [
-        { type_id: 1, name: 't1.small', family: 'general', vcpu: 1, ram_gb: 2, disk_gb: 20, price_per_hour: 0.0240, valid_from: '2026-01-01', valid_to: null },
-        { type_id: 2, name: 'c1.medium', family: 'compute', vcpu: 2, ram_gb: 4, disk_gb: 40, price_per_hour: 0.0480, valid_from: '2026-01-01', valid_to: null },
-        { type_id: 3, name: 'm1.large', family: 'memory', vcpu: 4, ram_gb: 16, disk_gb: 80, price_per_hour: 0.1200, valid_from: '2026-01-01', valid_to: null },
-        { type_id: 4, name: 'c1.xlarge', family: 'compute', vcpu: 8, ram_gb: 16, disk_gb: 160, price_per_hour: 0.1920, valid_from: '2026-01-01', valid_to: null },
-      ];
-
-      setPricingList(Array.isArray(data) && data.length ? data : fallback);
+      setPricingList(Array.isArray(data) ? data : []);
     } catch (err) {
       setBannerError({ msg: 'Failed to fetch pricing rates.', hint: err.msg });
     } finally {

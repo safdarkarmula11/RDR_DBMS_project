@@ -11,6 +11,7 @@ export default function AllInvoices() {
   const navigate = useNavigate();
   const [invoices, setInvoices] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
   const [statusFilter, setStatusFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -18,14 +19,11 @@ export default function AllInvoices() {
     try {
       setLoading(true);
       const data = await api.get('/billing/invoices');
-      const fallback = [
-        { invoice_id: 1042, org_id: 1, org_name: 'Acme Enterprises', period_start: '2026-10-01', period_end: '2026-10-31', subtotal: 180.42, tax: 18.04, total: 198.46, status: 'issued', due_date: '2026-11-15' },
-        { invoice_id: 1041, org_id: 2, org_name: 'Stark Technologies', period_start: '2026-10-01', period_end: '2026-10-31', subtotal: 1420.00, tax: 142.00, total: 1562.00, status: 'issued', due_date: '2026-11-15' },
-        { invoice_id: 1040, org_id: 3, org_name: 'Wayne Logistics', period_start: '2026-09-01', period_end: '2026-09-30', subtotal: 640.00, tax: 64.00, total: 704.00, status: 'overdue', due_date: '2026-10-15' },
-        { invoice_id: 1039, org_id: 4, org_name: 'Cyberdyne Systems', period_start: '2026-09-01', period_end: '2026-09-30', subtotal: 920.50, tax: 92.05, total: 1012.55, status: 'paid', due_date: '2026-10-15' },
-        { invoice_id: 1038, org_id: 5, org_name: 'Umbrella BioTech', period_start: '2026-09-01', period_end: '2026-09-30', subtotal: 310.00, tax: 31.00, total: 341.00, status: 'paid', due_date: '2026-10-15' },
-      ];
-      setInvoices(Array.isArray(data) && data.length ? data : fallback);
+      setInvoices(Array.isArray(data) ? data : []);
+      setLoadError(null);
+    } catch (err) {
+      setInvoices([]);
+      setLoadError({ msg: 'Could not load invoices.', hint: err.msg });
     } finally {
       setLoading(false);
     }
@@ -44,6 +42,7 @@ export default function AllInvoices() {
 
   return (
     <div>
+      {loadError && <Banner tone="danger" message={loadError.msg} hint={loadError.hint} />}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
         <div>
           <h1>Global Invoices Directory</h1>

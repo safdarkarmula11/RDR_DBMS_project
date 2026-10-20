@@ -12,6 +12,7 @@ export default function Credits() {
   const [orgs, setOrgs] = useState([]);
   const [creditTransactions, setCreditTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
   const [actionLoading, setActionLoading] = useState(false);
 
   // Modal
@@ -30,21 +31,10 @@ export default function Credits() {
         api.get('/billing/credits/transactions')
       ]);
 
-      const fallbackOrgs = [
-        { org_id: 1, name: 'Acme Enterprises', credit_balance: 150.00, tier_name: 'Developer' },
-        { org_id: 2, name: 'Stark Technologies', credit_balance: 1200.00, tier_name: 'Enterprise' },
-        { org_id: 3, name: 'Wayne Logistics', credit_balance: 0.00, tier_name: 'Startup' },
-        { org_id: 4, name: 'Cyberdyne Systems', credit_balance: 450.00, tier_name: 'Startup' },
-      ];
-
-      const fallbackTx = [
-        { tx_id: 201, org_name: 'Acme Enterprises', type: 'credit_grant', amount: 150.00, reason: 'Promotional onboarding credit', created_at: '2026-10-01' },
-        { tx_id: 200, org_name: 'Stark Technologies', type: 'credit_grant', amount: 1200.00, reason: 'Enterprise annual commitment bonus', created_at: '2026-09-15' },
-        { tx_id: 198, org_name: 'Acme Enterprises', type: 'invoice_deduction', amount: 20.00, reason: 'Deducted on INV-01002 settlement', created_at: '2026-10-05' },
-      ];
-
-      setOrgs(orgsRes.status === 'fulfilled' && Array.isArray(orgsRes.value) ? orgsRes.value : fallbackOrgs);
-      setCreditTransactions(txRes.status === 'fulfilled' && Array.isArray(txRes.value) ? txRes.value : fallbackTx);
+      setOrgs(orgsRes.status === 'fulfilled' && Array.isArray(orgsRes.value) ? orgsRes.value : []);
+      setCreditTransactions(txRes.status === 'fulfilled' && Array.isArray(txRes.value) ? txRes.value : []);
+      const failed = [orgsRes, txRes].find((r) => r.status === 'rejected');
+      setLoadError(failed ? { msg: 'Failed to load credit data.', hint: failed.reason?.msg } : null);
     } finally {
       setLoading(false);
     }
@@ -80,6 +70,7 @@ export default function Credits() {
 
   return (
     <div>
+      {loadError && <Banner tone="danger" message={loadError.msg} hint={loadError.hint} />}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
         <div>
           <h1>Customer Credits & Adjustments</h1>

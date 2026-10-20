@@ -69,32 +69,15 @@ export default function InstanceDetail() {
         }
 
         if (!found) {
-          // Fallback dummy for direct URL navigation
-          found = {
-            instance_id: Number(id),
-            name: `instance-${id}`,
-            status: 'running',
-            type_name: 'c1.medium',
-            vcpu: 2,
-            ram_gb: 4,
-            disk_gb: 40,
-            image: 'Ubuntu Server 24.04 LTS',
-            region_name: 'US-East (N. Virginia)',
-            ip_address: '198.51.100.24',
-            auto_backup: true,
-            price_per_hour: 0.048,
-            created_at: new Date(Date.now() - 86400000 * 5).toISOString()
-          };
+          setInstance(null);
+          return;
         }
         setInstance(found);
 
         if (historyRes.status === 'fulfilled' && Array.isArray(historyRes.value)) {
           setHistoryLogs(historyRes.value);
         } else {
-          setHistoryLogs([
-            { audit_id: 301, action: 'UPDATE', old_data: { status: 'stopped' }, new_data: { status: 'running' }, changed_at: new Date().toISOString(), changed_by_name: user?.name || 'Administrator' },
-            { audit_id: 280, action: 'INSERT', old_data: null, new_data: { status: 'pending', name: found.name }, changed_at: found.created_at, changed_by_name: 'system' }
-          ]);
+          setHistoryLogs([]);
         }
 
         if (volRes.status === 'fulfilled' && Array.isArray(volRes.value)) {
@@ -176,15 +159,6 @@ export default function InstanceDetail() {
     }
   };
 
-  // Mock telemetry data for usage tab
-  const cpuData = [
-    { time: '10:00', cpu: 15, egress: 120 },
-    { time: '11:00', cpu: 28, egress: 190 },
-    { time: '12:00', cpu: 65, egress: 450 },
-    { time: '13:00', cpu: 42, egress: 310 },
-    { time: '14:00', cpu: 38, egress: 280 },
-    { time: '15:00', cpu: 52, egress: 390 },
-  ];
 
   if (loading) {
     return (
@@ -429,36 +403,12 @@ export default function InstanceDetail() {
 
       {/* Tab: Usage Telemetry */}
       {activeTab === 'usage' && (
-        <div className="grid-12">
-          <div className="card col-6">
-            <div className="card-title" style={{ marginBottom: 12 }}>CPU Utilization (%)</div>
-            <div style={{ height: 200, width: '100%' }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={cpuData}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--line)" />
-                  <XAxis dataKey="time" tick={{ fill: 'var(--muted)', fontSize: 11 }} />
-                  <YAxis tick={{ fill: 'var(--muted)', fontSize: 11 }} domain={[0, 100]} />
-                  <Tooltip />
-                  <Area type="monotone" dataKey="cpu" stroke="var(--brand)" fill="var(--brand)" fillOpacity={0.15} />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-
-          <div className="card col-6">
-            <div className="card-title" style={{ marginBottom: 12 }}>Network Egress (MB/hr)</div>
-            <div style={{ height: 200, width: '100%' }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={cpuData}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--line)" />
-                  <XAxis dataKey="time" tick={{ fill: 'var(--muted)', fontSize: 11 }} />
-                  <YAxis tick={{ fill: 'var(--muted)', fontSize: 11 }} />
-                  <Tooltip />
-                  <Area type="monotone" dataKey="egress" stroke="var(--ok)" fill="var(--ok)" fillOpacity={0.15} />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
+        <div className="card">
+          <div className="card-title" style={{ marginBottom: 8 }}>Usage Telemetry</div>
+          <p style={{ color: 'var(--muted)', fontSize: 14 }}>
+            Per-instance telemetry charts are not available yet. The metering job records compute hours for every running instance;
+            see the Usage Explorer for your organization totals.
+          </p>
         </div>
       )}
 

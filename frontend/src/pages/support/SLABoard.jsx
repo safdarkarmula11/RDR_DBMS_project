@@ -3,6 +3,7 @@ import { api } from '../../api';
 import Button from '../../ui/Button';
 import StatusBadge from '../../ui/StatusBadge';
 import { AlertOctagon, CheckCircle2, Clock, ShieldCheck, User } from 'lucide-react';
+import Banner from '../../ui/Banner';
 
 const LANES = [
   { id: 'critical', title: 'Critical SLA (1h Target)', tone: 'danger', bg: 'rgba(240, 68, 97, 0.08)' },
@@ -14,6 +15,7 @@ const LANES = [
 export default function SLABoard() {
   const [tickets, setTickets] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
 
   useEffect(() => {
     let mounted = true;
@@ -21,14 +23,9 @@ export default function SLABoard() {
       try {
         setLoading(true);
         const data = await api.get('/support/sla');
-        const fallback = [
-          { ticket_id: 104, subject: 'Database Host Panic (Host-01)', priority: 'critical', org_name: 'Stark Tech', hours_left: 0.8, status: 'open' },
-          { ticket_id: 101, subject: 'Volume Mount Failures', priority: 'high', org_name: 'Acme Enterprises', hours_left: 2.5, status: 'in_progress' },
-          { ticket_id: 102, subject: 'Reverse DNS PTR Request', priority: 'medium', org_name: 'Wayne Logistics', hours_left: 10.4, status: 'open' },
-          { ticket_id: 99, subject: 'Invoice Item Tax Consultation', priority: 'low', org_name: 'Cyberdyne Systems', hours_left: 22.0, status: 'open' },
-          { ticket_id: 98, subject: 'API Token Rotation Question', priority: 'low', org_name: 'Acme Enterprises', hours_left: 21.5, status: 'resolved' },
-        ];
-        if (mounted) setTickets(Array.isArray(data) && data.length ? data : fallback);
+        if (mounted) { setTickets(Array.isArray(data) ? data : []); setLoadError(null); }
+      } catch (err) {
+        if (mounted) setLoadError({ msg: 'Could not load the SLA board.', hint: err.msg });
       } finally {
         if (mounted) setLoading(false);
       }
@@ -39,6 +36,7 @@ export default function SLABoard() {
 
   return (
     <div>
+      {loadError && <Banner tone="danger" message={loadError.msg} hint={loadError.hint} />}
       <div style={{ marginBottom: 20 }}>
         <h1>SLA Compliance Board</h1>
         <p style={{ color: 'var(--muted)', fontSize: 14, marginTop: 2 }}>

@@ -33,21 +33,10 @@ export default function Hosts() {
         api.get('/infra/regions')
       ]);
 
-      const fallbackHosts = [
-        { host_id: 1, hostname: 'host-us-e1-01', region_name: 'US-East (N. Virginia)', total_vcpu: 64, total_ram_gb: 256, total_disk_gb: 2000, status: 'active' },
-        { host_id: 2, hostname: 'host-us-e1-02', region_name: 'US-East (N. Virginia)', total_vcpu: 64, total_ram_gb: 256, total_disk_gb: 2000, status: 'active' },
-        { host_id: 3, hostname: 'host-eu-w1-01', region_name: 'EU-West (Frankfurt)', total_vcpu: 32, total_ram_gb: 128, total_disk_gb: 1000, status: 'maintenance' },
-        { host_id: 4, hostname: 'host-ap-s1-01', region_name: 'AP-South (Mumbai)', total_vcpu: 32, total_ram_gb: 128, total_disk_gb: 1000, status: 'active' },
-      ];
-
-      const fallbackRegions = [
-        { region_id: 1, code: 'us-east-1', name: 'US-East (N. Virginia)', country: 'United States', status: 'active' },
-        { region_id: 2, code: 'eu-west-1', name: 'EU-West (Frankfurt)', country: 'Germany', status: 'active' },
-        { region_id: 3, code: 'ap-south-1', name: 'AP-South (Mumbai)', country: 'India', status: 'active' },
-      ];
-
-      setHosts(hRes.status === 'fulfilled' && Array.isArray(hRes.value) ? hRes.value : fallbackHosts);
-      setRegions(rRes.status === 'fulfilled' && Array.isArray(rRes.value) ? rRes.value : fallbackRegions);
+      setHosts(hRes.status === 'fulfilled' && Array.isArray(hRes.value) ? hRes.value : []);
+      setRegions(rRes.status === 'fulfilled' && Array.isArray(rRes.value) ? rRes.value : []);
+      const failed = [hRes, rRes].find((r) => r.status === 'rejected');
+      setBannerError(failed ? { msg: 'Failed to load hosts or regions.', hint: failed.reason?.msg } : null);
     } catch (err) {
       setBannerError({ msg: 'Failed to load hosts.', hint: err.msg });
     } finally {

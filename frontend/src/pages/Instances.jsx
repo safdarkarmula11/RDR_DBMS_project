@@ -37,12 +37,7 @@ export default function Instances() {
         msg: err.msg || 'Could not load instances from the server.',
         hint: err.hint || 'Verify backend connection and database tables.'
       });
-      // Fallback sample instances
-      setInstances([
-        { instance_id: 101, name: 'prod-web-01', status: 'running', type_name: 'c1.medium', vcpu: 2, ram_gb: 4, region_name: 'US-East (N. Virginia)', ip_address: '198.51.100.24', price_per_hour: 0.048, created_at: '2026-10-12T08:00:00Z' },
-        { instance_id: 102, name: 'prod-db-primary', status: 'running', type_name: 'm1.large', vcpu: 4, ram_gb: 16, region_name: 'US-East (N. Virginia)', ip_address: '198.51.100.25', price_per_hour: 0.120, created_at: '2026-10-14T11:20:00Z' },
-        { instance_id: 103, name: 'staging-api', status: 'stopped', type_name: 't1.small', vcpu: 1, ram_gb: 2, region_name: 'EU-West (Frankfurt)', ip_address: '203.0.113.12', price_per_hour: 0.024, created_at: '2026-10-15T15:45:00Z' }
-      ]);
+      setInstances([]);
     } finally {
       setLoading(false);
     }
