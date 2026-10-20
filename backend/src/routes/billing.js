@@ -240,7 +240,17 @@ router.get('/overview', requireRole('super_admin', 'billing'), async (req, res, 
         LIMIT 10
       `);
 
+      const [trend] = await conn.execute(`
+        SELECT DATE_FORMAT(period_start, '%b %Y') AS month, SUM(total) AS revenue
+        FROM invoices
+        WHERE status <> 'void'
+          AND period_start >= DATE_SUB(DATE_FORMAT(CURRENT_DATE, '%Y-%m-01'), INTERVAL 5 MONTH)
+        GROUP BY YEAR(period_start), MONTH(period_start), DATE_FORMAT(period_start, '%b %Y')
+        ORDER BY YEAR(period_start), MONTH(period_start)
+      `);
+
       return {
+        revenueTrend: trend.map((r) => ({ month: r.month, revenue: Number(r.revenue) })),
         kpis: {
           monthlyBilled: Number(invKpis[0]?.monthlyBilled || 0),
           outstandingReceivables: Number(invKpis[0]?.outstandingReceivables || 0),
@@ -264,7 +274,7 @@ router.get('/organizations', requireRole('super_admin', 'billing'), async (req, 
       const [rows] = await conn.execute(`
         SELECT o.org_id, o.name, o.credit_balance, o.status, t.name AS tier_name
         FROM organizations o
-        LEFT JOIN tiers t ON t.tier_id = o.tier_id
+        LEFT JOIN account_tiers t ON t.tier_id = o.tier_id
         ORDER BY o.name ASC
       `);
       return rows;

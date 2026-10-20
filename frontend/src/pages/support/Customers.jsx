@@ -5,10 +5,12 @@ import StatusBadge from '../../ui/StatusBadge';
 import DataTable from '../../ui/DataTable';
 import Drawer from '../../ui/Drawer';
 import { Building2, Search, ExternalLink, ShieldAlert } from 'lucide-react';
+import Banner from '../../ui/Banner';
 
 export default function Customers() {
   const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCust, setSelectedCust] = useState(null);
 
@@ -18,13 +20,9 @@ export default function Customers() {
       try {
         setLoading(true);
         const data = await api.get('/support/customers');
-        const fallback = [
-          { org_id: 1, name: 'Acme Enterprises', tier_name: 'Developer', status: 'active', active_instances: 3, storage_gb: 100, open_tickets: 1, credit_balance: 150.00, created_at: '2026-09-01' },
-          { org_id: 2, name: 'Stark Technologies', tier_name: 'Enterprise', status: 'active', active_instances: 24, storage_gb: 3400, open_tickets: 2, credit_balance: 1200.00, created_at: '2026-08-15' },
-          { org_id: 3, name: 'Wayne Logistics', tier_name: 'Startup', status: 'suspended', active_instances: 6, storage_gb: 450, open_tickets: 1, credit_balance: 0.00, created_at: '2026-09-20' },
-          { org_id: 4, name: 'Cyberdyne Systems', tier_name: 'Startup', status: 'active', active_instances: 12, storage_gb: 1200, open_tickets: 0, credit_balance: 450.00, created_at: '2026-07-10' },
-        ];
-        if (mounted) setCustomers(Array.isArray(data) && data.length ? data : fallback);
+        if (mounted) { setCustomers(Array.isArray(data) ? data : []); setLoadError(null); }
+      } catch (err) {
+        if (mounted) setLoadError({ msg: 'Could not load customers.', hint: err.msg });
       } finally {
         if (mounted) setLoading(false);
       }
@@ -40,6 +38,7 @@ export default function Customers() {
 
   return (
     <div>
+      {loadError && <Banner tone="danger" message={loadError.msg} hint={loadError.hint} />}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
         <div>
           <h1>Customer Directory</h1>

@@ -24,25 +24,13 @@ export default function Capacity() {
         api.get('/infra/hosts')
       ]);
 
-      const fallbackRegions = [
-        { region_id: 1, name: 'US-East (N. Virginia)', code: 'us-east-1', total_hosts: 4, used_vcpu: 92, total_vcpu: 128, used_ram_gb: 384, total_ram_gb: 512, used_disk_gb: 3200, total_disk_gb: 4000 },
-        { region_id: 2, name: 'EU-West (Frankfurt)', code: 'eu-west-1', total_hosts: 3, used_vcpu: 48, total_vcpu: 96, used_ram_gb: 192, total_ram_gb: 384, used_disk_gb: 1800, total_disk_gb: 3000 },
-        { region_id: 3, name: 'AP-South (Mumbai)', code: 'ap-south-1', total_hosts: 2, used_vcpu: 58, total_vcpu: 64, used_ram_gb: 230, total_ram_gb: 256, used_disk_gb: 1900, total_disk_gb: 2000 },
-      ];
-
-      const fallbackHosts = [
-        { host_id: 1, hostname: 'host-us-e1-01', region_name: 'US-East', status: 'active', used_vcpu: 28, total_vcpu: 32, used_ram_gb: 110, total_ram_gb: 128, used_disk_gb: 850, total_disk_gb: 1000 },
-        { host_id: 2, hostname: 'host-us-e1-02', region_name: 'US-East', status: 'active', used_vcpu: 24, total_vcpu: 32, used_ram_gb: 96, total_ram_gb: 128, used_disk_gb: 780, total_disk_gb: 1000 },
-        { host_id: 3, hostname: 'host-eu-w1-01', region_name: 'EU-West', status: 'active', used_vcpu: 16, total_vcpu: 32, used_ram_gb: 64, total_ram_gb: 128, used_disk_gb: 600, total_disk_gb: 1000 },
-        { host_id: 4, hostname: 'host-ap-s1-01', region_name: 'AP-South', status: 'active', used_vcpu: 30, total_vcpu: 32, used_ram_gb: 122, total_ram_gb: 128, used_disk_gb: 980, total_disk_gb: 1000 },
-      ];
-
-      const rList = capRes.status === 'fulfilled' && Array.isArray(capRes.value) && capRes.value.length ? capRes.value : fallbackRegions;
-      const hList = hostRes.status === 'fulfilled' && Array.isArray(hostRes.value) && hostRes.value.length ? hostRes.value : fallbackHosts;
+      const rList = capRes.status === 'fulfilled' && Array.isArray(capRes.value) ? capRes.value : [];
+      const hList = hostRes.status === 'fulfilled' && Array.isArray(hostRes.value) ? hostRes.value : [];
+      const failed = [capRes, hostRes].find((r) => r.status === 'rejected');
 
       setRegions(rList);
       setHosts(hList);
-      setBannerError(null);
+      setBannerError(failed ? { msg: 'Failed to load capacity data.', hint: failed.reason?.msg } : null);
     } catch (err) {
       setBannerError({ msg: 'Failed to refresh capacity data.', hint: err.msg });
     } finally {
