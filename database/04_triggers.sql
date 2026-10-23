@@ -98,6 +98,35 @@ BEGIN
           COALESCE(@app_user_id, 0));
 END$$
 
+-- Keep instance_type_history in step with instances.type_id (the history is what usage is priced with)
+DROP TRIGGER IF EXISTS trg_instances_ai_type_history$$
+CREATE TRIGGER trg_instances_ai_type_history AFTER INSERT ON instances FOR EACH ROW
+BEGIN
+  INSERT INTO instance_type_history(instance_id, valid_from, type_id)
+  VALUES (NEW.instance_id, '2000-01-01 00:00:00.000000', NEW.type_id);
+END$$
+
+DROP TRIGGER IF EXISTS trg_instances_au_type_history$$
+CREATE TRIGGER trg_instances_au_type_history AFTER UPDATE ON instances FOR EACH ROW
+BEGIN
+  IF NEW.type_id <> OLD.type_id THEN
+    INSERT INTO instance_type_history(instance_id, valid_from, type_id)
+    VALUES (NEW.instance_id, NOW(6), NEW.type_id);
+  END IF;
+END$$
+
+DROP TRIGGER IF EXISTS trg_ith_bu_block$$
+CREATE TRIGGER trg_ith_bu_block BEFORE UPDATE ON instance_type_history FOR EACH ROW
+BEGIN
+  SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Instance type history is append-only';
+END$$
+
+DROP TRIGGER IF EXISTS trg_ith_bd_block$$
+CREATE TRIGGER trg_ith_bd_block BEFORE DELETE ON instance_type_history FOR EACH ROW
+BEGIN
+  SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Instance type history is append-only';
+END$$
+
 DROP TRIGGER IF EXISTS trg_instances_bu_rules$$
 CREATE TRIGGER trg_instances_bu_rules BEFORE UPDATE ON instances FOR EACH ROW
 BEGIN
@@ -770,9 +799,6 @@ BEGIN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Cannot record usage for a terminated instance';
   END IF;
 
-  IF NEW.type_id <> v_type THEN
-    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Usage record type_id does not match current instance type_id';
-  END IF;
 END$$
 
 

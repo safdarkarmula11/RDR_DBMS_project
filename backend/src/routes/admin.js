@@ -141,25 +141,25 @@ router.post('/simulate/usage', validate({ body: simulateUsageSchema }), async (r
         for (const inst of instances) {
           // 1. CPU hour usage
           await conn.execute(
-            `INSERT INTO usage_records(recorded_at, instance_id, type_id, metric, quantity)
-             VALUES (?, ?, ?, 'cpu_hour', 1.000)`,
-            [formattedDate, inst.instance_id, inst.type_id]
+            `INSERT INTO usage_records(recorded_at, instance_id, metric, quantity)
+             VALUES (?, ?, 'cpu_hour', 1.000)`,
+            [formattedDate, inst.instance_id]
           );
 
           // 2. Storage GB usage (random between 10 and 50)
           const storageQty = (10 + Math.random() * 40).toFixed(3);
           await conn.execute(
-            `INSERT INTO usage_records(recorded_at, instance_id, type_id, metric, quantity)
-             VALUES (?, ?, ?, 'storage_gb', ?)`,
-            [formattedDate, inst.instance_id, inst.type_id, storageQty]
+            `INSERT INTO usage_records(recorded_at, instance_id, metric, quantity)
+             VALUES (?, ?, 'storage_gb', ?)`,
+            [formattedDate, inst.instance_id, storageQty]
           );
 
           // 3. Egress GB usage (random between 0.1 and 5.0)
           const egressQty = (0.1 + Math.random() * 4.9).toFixed(3);
           await conn.execute(
-            `INSERT INTO usage_records(recorded_at, instance_id, type_id, metric, quantity)
-             VALUES (?, ?, ?, 'egress_gb', ?)`,
-            [formattedDate, inst.instance_id, inst.type_id, egressQty]
+            `INSERT INTO usage_records(recorded_at, instance_id, metric, quantity)
+             VALUES (?, ?, 'egress_gb', ?)`,
+            [formattedDate, inst.instance_id, egressQty]
           );
 
           insertedCount += 3;
@@ -195,7 +195,7 @@ const BENCHMARKS = {
     indexName: 'idx_usage_cover',
     table: 'usage_records',
     withIndex: (c) => `SELECT metric, SUM(quantity) FROM usage_records WHERE instance_id = ${c.instanceId} AND recorded_at >= '2026-01-01' AND recorded_at < '2027-01-01' GROUP BY metric`,
-    withoutIndex: (c) => `SELECT metric, SUM(quantity) FROM usage_records IGNORE INDEX (idx_usage_time, idx_usage_cover) WHERE instance_id = ${c.instanceId} AND recorded_at >= '2026-01-01' AND recorded_at < '2027-01-01' GROUP BY metric`,
+    withoutIndex: (c) => `SELECT metric, SUM(quantity) FROM usage_records IGNORE INDEX (idx_usage_cover) WHERE instance_id = ${c.instanceId} AND recorded_at >= '2026-01-01' AND recorded_at < '2027-01-01' GROUP BY metric`,
   },
   Q2: {
     name: 'Q2: Running instances of an organization',

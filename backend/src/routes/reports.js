@@ -467,7 +467,7 @@ router.get('/R18', requireRole('super_admin', 'billing'), async (req, res, next)
       const [result] = await conn.execute(
         `SELECT DISTINCT o.org_id, o.name AS org_name,
                 DATE_FORMAT(u.recorded_at, '%Y-%m') AS usage_month,
-                COUNT(u.usage_id) AS usage_records_count
+                COUNT(u.instance_id) AS usage_records_count
          FROM organizations o
          JOIN v_usage_records u ON u.org_id = o.org_id
          LEFT JOIN v_invoices inv ON inv.org_id = o.org_id

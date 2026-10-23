@@ -99,7 +99,7 @@ async function generateUsage(orgId, instances) {
 
   const now = new Date();
   now.setUTCMinutes(0, 0, 0);
-  const sql = 'INSERT INTO usage_records (recorded_at, instance_id, type_id, metric, quantity) VALUES ?';
+  const sql = 'INSERT INTO usage_records (recorded_at, instance_id, metric, quantity) VALUES ?';
   const conn = await pool.getConnection();
   let rows = [];
   let total = 0;
@@ -120,11 +120,11 @@ async function generateUsage(orgId, instances) {
       for (let h = DAYS * 24; h >= 1; h -= 1) {
         const ts = new Date(now.getTime() - h * 3600 * 1000);
         if (Math.random() > 0.04) {
-          rows.push([fmt(ts), inst.instance_id, inst.type_id, 'cpu_hour', 1]);
+          rows.push([fmt(ts), inst.instance_id, 'cpu_hour', 1]);
         }
         if (ts.getUTCHours() === 0) {
-          rows.push([fmt(ts), inst.instance_id, inst.type_id, 'storage_gb', (baseStorage + rand(-2, 2)).toFixed(3)]);
-          rows.push([fmt(ts), inst.instance_id, inst.type_id, 'egress_gb', rand(0.2, 9).toFixed(3)]);
+          rows.push([fmt(ts), inst.instance_id, 'storage_gb', (baseStorage + rand(-2, 2)).toFixed(3)]);
+          rows.push([fmt(ts), inst.instance_id, 'egress_gb', rand(0.2, 9).toFixed(3)]);
         }
         if (rows.length >= BATCH) await flush();
       }

@@ -20,17 +20,17 @@ router.post('/tick-usage', async (req, res, next) => {
       for (const inst of running) {
         // vCPU compute hour
         await conn.execute(
-          `INSERT INTO usage_records (instance_id, type_id, metric, quantity, recorded_at)
-           VALUES (?, ?, 'cpu_hour', 1.0, NOW())`,
-          [inst.instance_id, inst.type_id]
+          `INSERT INTO usage_records (instance_id, metric, quantity, recorded_at)
+           VALUES (?, 'cpu_hour', 1.0, NOW(6))`,
+          [inst.instance_id]
         );
 
         // Network egress
         const egressMb = (Math.random() * 250 + 10).toFixed(2);
         await conn.execute(
-          `INSERT INTO usage_records (instance_id, type_id, metric, quantity, recorded_at)
-           VALUES (?, ?, 'egress_gb', ?, NOW())`,
-          [inst.instance_id, inst.type_id, (egressMb / 1024).toFixed(4)]
+          `INSERT INTO usage_records (instance_id, metric, quantity, recorded_at)
+           VALUES (?, 'egress_gb', ?, NOW(6))`,
+          [inst.instance_id, (egressMb / 1024).toFixed(4)]
         );
         ticks++;
       }

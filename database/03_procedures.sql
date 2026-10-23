@@ -352,8 +352,8 @@ BEGIN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Cannot record usage for a terminated instance';
   END IF;
 
-  INSERT INTO usage_records(recorded_at, instance_id, type_id, metric, quantity)
-  VALUES (NOW(), p_instance, v_type_id, p_metric, p_quantity);
+  INSERT INTO usage_records(recorded_at, instance_id, metric, quantity)
+  VALUES (NOW(6), p_instance, p_metric, p_quantity);
 
   COMMIT;
 END$$
@@ -385,7 +385,7 @@ BEGIN
   -- that was valid on the day the usage was recorded.
   DECLARE cur_usage CURSOR FOR
     SELECT u.instance_id, u.type_id, i.name, pr.price_per_hour, SUM(u.quantity) AS total_qty
-    FROM usage_records u
+    FROM v_usage_records u
     JOIN instances i ON i.instance_id = u.instance_id
     LEFT JOIN pricing pr
            ON pr.type_id = u.type_id
@@ -1136,7 +1136,7 @@ BEGIN
 
   -- Check 5: No orphan usage rows
   INSERT INTO tmp_consistency_errors (check_name, record_id, message)
-  SELECT DISTINCT 'orphan_usage_record', u.usage_id,
+  SELECT DISTINCT 'orphan_usage_record', u.instance_id,
          CONCAT('Usage record references non-existent instance_id ', u.instance_id)
   FROM usage_records u
   LEFT JOIN instances i ON i.instance_id = u.instance_id

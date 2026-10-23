@@ -66,6 +66,9 @@ GRANT SELECT ON nimbushost.invoice_items   TO 'nimbus_billing';
 GRANT SELECT ON nimbushost.payments        TO 'nimbus_billing';
 GRANT SELECT ON nimbushost.organizations   TO 'nimbus_billing';
 GRANT SELECT ON nimbushost.usage_records   TO 'nimbus_billing';
+GRANT SELECT ON nimbushost.v_invoices        TO 'nimbus_billing';   -- derived tax and total
+GRANT SELECT ON nimbushost.v_invoice_items   TO 'nimbus_billing';   -- derived line amount
+GRANT SELECT ON nimbushost.v_usage_records   TO 'nimbus_billing';   -- usage with organization
 GRANT SELECT ON nimbushost.v_org_monthly_cost TO 'nimbus_billing';
 GRANT SELECT ON nimbushost.v_overdue_invoices TO 'nimbus_billing';
 GRANT UPDATE (credit_balance) ON nimbushost.organizations TO 'nimbus_billing';   -- column-level privilege
@@ -77,6 +80,8 @@ GRANT EXECUTE ON PROCEDURE nimbushost.sp_apply_payment        TO 'nimbus_billing
 GRANT SELECT ON nimbushost.v_star_usage_monthly TO 'nimbus_analyst';
 GRANT SELECT ON nimbushost.fact_usage_daily     TO 'nimbus_analyst';
 GRANT SELECT ON nimbushost.dim_date             TO 'nimbus_analyst';
+GRANT SELECT ON nimbushost.dim_month            TO 'nimbus_analyst';
+GRANT SELECT ON nimbushost.dim_weekday          TO 'nimbus_analyst';
 GRANT SELECT ON nimbushost.dim_org              TO 'nimbus_analyst';
 GRANT SELECT ON nimbushost.dim_type             TO 'nimbus_analyst';
 GRANT SELECT ON nimbushost.v_revenue_by_region  TO 'nimbus_analyst';

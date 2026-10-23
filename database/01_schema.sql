@@ -202,6 +202,21 @@ CREATE TABLE instances (
   INDEX idx_inst_auto_backup (auto_backup)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Which instance type an instance had over time. Needed because the type can change (resize) and
+-- usage must be priced with the type in effect when it was metered. usage_records therefore does not
+-- store type_id: it depends only on (instance, moment), not on the whole usage key, so it lives here.
+-- The first row of an instance starts at 2000-01-01 ("from the beginning"); each resize adds a row.
+DROP TABLE IF EXISTS instance_type_history;
+CREATE TABLE instance_type_history (
+  instance_id INT         NOT NULL,
+  valid_from  DATETIME(6) NOT NULL,
+  type_id     INT         NOT NULL,
+  PRIMARY KEY (instance_id, valid_from),
+  CONSTRAINT fk_ith_instance FOREIGN KEY (instance_id) REFERENCES instances(instance_id)      ON DELETE RESTRICT ON UPDATE RESTRICT,
+  CONSTRAINT fk_ith_type     FOREIGN KEY (type_id)     REFERENCES instance_types(type_id)     ON DELETE RESTRICT ON UPDATE RESTRICT,
+  INDEX idx_ith_type (type_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 DROP TABLE IF EXISTS ip_addresses;
 CREATE TABLE ip_addresses (
   ip_id        INT         AUTO_INCREMENT PRIMARY KEY,
@@ -289,15 +304,14 @@ CREATE TABLE dns_records (
 
 DROP TABLE IF EXISTS usage_records;
 CREATE TABLE usage_records (
-  usage_id    BIGINT          AUTO_INCREMENT,
-  recorded_at DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  recorded_at DATETIME(6)     NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
   instance_id INT             NOT NULL,
-  type_id     INT             NOT NULL,
   metric      ENUM('cpu_hour','storage_gb','egress_gb') NOT NULL,
   quantity    DECIMAL(10,3)   NOT NULL,
-  PRIMARY KEY (usage_id, recorded_at),
+  -- Natural key: one reading per instance, metric and moment. It contains the partition column, which
+  -- MySQL requires, so no surrogate id is needed and every column depends on the whole key.
+  PRIMARY KEY (recorded_at, instance_id, metric),
   CONSTRAINT chk_usage_qty CHECK (quantity >= 0),
-  INDEX idx_usage_time     (recorded_at),
   INDEX idx_usage_cover    (instance_id, recorded_at, metric, quantity)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 PARTITION BY RANGE COLUMNS(recorded_at) (
@@ -461,6 +475,7 @@ CREATE TABLE daily_usage_summary (
   egress_gb    DECIMAL(14,3) NOT NULL DEFAULT 0.000,
   record_count INT           NOT NULL DEFAULT 0,
   PRIMARY KEY (usage_date, org_id),
+  CONSTRAINT fk_dus_org FOREIGN KEY (org_id) REFERENCES organizations(org_id) ON DELETE RESTRICT ON UPDATE RESTRICT,
   INDEX idx_dus_org (org_id, usage_date)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -550,7 +565,7 @@ CREATE TABLE fact_usage_daily (
 -- ============================================================
 -- Values that can be computed from other columns of the same row are NOT stored. These views expose
 -- them under their familiar names:
---   invoices.tax, invoices.total, invoice_items.amount, usage_records.org_id.
+--   invoices.tax, invoices.total, invoice_items.amount, usage_records.org_id, usage_records.type_id.
 
 DROP VIEW IF EXISTS v_invoices;
 CREATE VIEW v_invoices AS
@@ -571,7 +586,11 @@ FROM invoice_items ii;
 
 DROP VIEW IF EXISTS v_usage_records;
 CREATE VIEW v_usage_records AS
-SELECT u.usage_id, u.recorded_at, u.instance_id, i.org_id, u.type_id, u.metric, u.quantity
+SELECT u.recorded_at, u.instance_id, i.org_id,
+       (SELECT h.type_id FROM instance_type_history h
+         WHERE h.instance_id = u.instance_id AND h.valid_from <= u.recorded_at
+         ORDER BY h.valid_from DESC LIMIT 1) AS type_id,
+       u.metric, u.quantity
 FROM usage_records u
 JOIN instances i ON i.instance_id = u.instance_id;
 

@@ -7,7 +7,7 @@
 // Usage (from the backend folder, after db:setup and seed-users):
 //   node scripts/integrityTests.js
 // Save the output for the report:
-//   node scripts/integrityTests.js | Tee-Object ..\docs\test_results_integrity.txt
+//   node scripts/integrityTests.js
 
 import { pool } from '../src/db.js';
 
@@ -87,7 +87,7 @@ async function runInTransaction() {
       const [r] = await q(`SELECT COUNT(*) AS c FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND (
           (TABLE_NAME = 'invoices' AND COLUMN_NAME IN ('total', 'tax'))
        OR (TABLE_NAME = 'invoice_items' AND COLUMN_NAME = 'amount')
-       OR (TABLE_NAME = 'usage_records' AND COLUMN_NAME = 'org_id')
+       OR (TABLE_NAME = 'usage_records' AND COLUMN_NAME IN ('org_id', 'type_id', 'usage_id'))
        OR (TABLE_NAME IN ('instances', 'volumes') AND COLUMN_NAME = 'live_name')
        OR (TABLE_NAME = 'dim_date' AND COLUMN_NAME IN ('month_name', 'quarter', 'is_weekend')))`);
       return Number(r.c) === 0;
@@ -118,6 +118,12 @@ async function runInTransaction() {
       return Number(m.c) === 12 && Number(w.c) === 7;
     });
 
+    await expectTrue('N10', 'Every instance has an instance_type_history row and v_usage_records derives type_id from it', async () => {
+      const [r] = await q('SELECT COUNT(*) AS c FROM instances i WHERE NOT EXISTS (SELECT 1 FROM instance_type_history h WHERE h.instance_id = i.instance_id)');
+      const [v] = await q('SELECT COUNT(*) AS c FROM v_usage_records WHERE type_id IS NULL');
+      return Number(r.c) === 0 && Number(v.c) === 0;
+    });
+
     // ---------- 2. redundant indexes removed ----------
     await expectTrue('I01', 'Redundant indexes idx_usage_instance and idx_inv_status no longer exist', async () => {
       const rows = await q(
@@ -126,12 +132,12 @@ async function runInTransaction() {
     });
 
     // ---------- 3. billing evidence is protected ----------
-    const [usage] = await q('SELECT usage_id, recorded_at FROM usage_records LIMIT 1');
+    const [usage] = await q('SELECT recorded_at, instance_id, metric FROM usage_records LIMIT 1');
     if (usage) {
       await expectError('U01', 'A usage record cannot be updated (append-only)', /append-only/i, () =>
-        q('UPDATE usage_records SET quantity = quantity WHERE usage_id = ? AND recorded_at = ?', [usage.usage_id, usage.recorded_at]));
+        q('UPDATE usage_records SET quantity = quantity WHERE recorded_at = ? AND instance_id = ? AND metric = ?', [usage.recorded_at, usage.instance_id, usage.metric]));
       await expectError('U02', 'A usage record cannot be deleted (append-only)', /append-only/i, () =>
-        q('DELETE FROM usage_records WHERE usage_id = ? AND recorded_at = ?', [usage.usage_id, usage.recorded_at]));
+        q('DELETE FROM usage_records WHERE recorded_at = ? AND instance_id = ? AND metric = ?', [usage.recorded_at, usage.instance_id, usage.metric]));
     } else {
       record('U01', 'A usage record cannot be updated (append-only)', 'SKIP', 'no usage rows yet; run node scripts/generateData.js');
       record('U02', 'A usage record cannot be deleted (append-only)', 'SKIP', 'no usage rows yet; run node scripts/generateData.js');

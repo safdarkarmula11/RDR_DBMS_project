@@ -12,7 +12,7 @@
 // Usage (from the backend folder, after db:setup and seed-users):
 //   node scripts/concurrencyDemo.js
 // Save the output for the report:
-//   node scripts/concurrencyDemo.js | Tee-Object ..\docs\test_results_concurrency.txt
+//   node scripts/concurrencyDemo.js
 
 import { pool } from '../src/db.js';
 

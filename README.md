@@ -7,7 +7,7 @@ Built as the project for **AI203 - Database Management Systems**, Department of 
 | | |
 |---|---|
 | **Stack** | MySQL 8, Node.js 20 + Express 4, React 18 + Vite (plain JavaScript) |
-| **Database objects** | 34 tables, 27 stored procedures, 10 functions, 75 triggers, 25 views, 7 scheduled events |
+| **Database objects** | 35 tables, 27 stored procedures, 10 functions, 79 triggers, 25 views, 7 scheduled events |
 | **Analytics** | 20 SQL reports (window functions, recursive CTEs, ROLLUP, JSON_TABLE, full-text search) |
 | **Roles** | Super admin, Billing, Support, Customer (owner and member) |
 
@@ -27,7 +27,7 @@ Built as the project for **AI203 - Database Management Systems**, Department of 
 12. [Testing, benchmarks and data generation](#12-testing-benchmarks-and-data-generation)
 13. [Troubleshooting](#13-troubleshooting)
 14. [Known limitations](#14-known-limitations)
-15. [Documentation and deliverables](#15-documentation-and-deliverables)
+15. [Design notes](#15-design-notes)
 16. [Conventions and team](#16-conventions-and-team)
 
 ---
@@ -44,7 +44,7 @@ Built as the project for **AI203 - Database Management Systems**, Department of 
 | Consistency auditing | `sp_check_consistency()` checks 11 cross-table invariants (host counters, invoice arithmetic, payments, orphan usage, quotas, price overlaps, credit sanity). |
 | Analytics | A star schema (`dim_date`, `dim_org`, `dim_type`, `fact_usage_daily`) plus 20 reports. |
 | Query optimization | A Performance Lab that runs real `EXPLAIN ANALYZE` comparisons with and without indexes, plus a bulk data generator. |
-| Normalization | Written normalization proof, a real decomposition (`images` into `operating_systems` and `images`), and the removal of every derived column, so all 34 relations are in 3NF (and BCNF) with no exceptions (`docs/normalization.md`). |
+| Normalization | Written normalization proof, a real decomposition (`images` into `operating_systems` and `images`), and the removal of every derived column, so all 35 relations are in 3NF (and BCNF) with no exceptions (see section 15). |
 | Concurrency | Row locking, `SKIP LOCKED`, lock ordering, deadlock handling, and a script that demonstrates every isolation anomaly with real connections. |
 | Database security and recovery | Roles, least-privilege grants and column-level privileges (`database/security/`), logical backups and point-in-time recovery. |
 
@@ -68,10 +68,10 @@ http://localhost:5173  -->  JWT auth, RBAC, Zod validation  -->  tables, trigger
 ```
 .
 ├── database/                     Numbered SQL files, applied in order by `npm run db:setup`
-│   ├── 01_schema.sql               34 tables, constraints, indexes, partitioning, derived-value views
+│   ├── 01_schema.sql               35 tables, constraints, indexes, partitioning, derived-value views
 │   ├── 02_functions.sql            10 stored functions
 │   ├── 03_procedures.sql           27 stored procedures (including sp_check_consistency, the star-schema ETL and partition maintenance)
-│   ├── 04_triggers.sql             75 triggers (rules, audit, immutability)
+│   ├── 04_triggers.sql             79 triggers (rules, audit, immutability)
 │   ├── 05_views.sql                22 views (internal, tenant-scoped "my_*", images, star schema); 3 more derived-value views are at the end of 01_schema.sql
 │   ├── 06_events.sql               7 scheduled events
 │   ├── 07_seed.sql                 Reference data: tiers, orgs, regions, hosts, types, images, pricing, IP pool
@@ -90,12 +90,6 @@ http://localhost:5173  -->  JWT auth, RBAC, Zod validation  -->  tables, trigger
 │   └── .env.example
 ├── frontend/                     React (Vite) console
 │   └── src/ auth/  layout/  pages/ (admin, billing, support)  ui/  styles/  api.js  nav.js
-├── simulator/                    Notes for the demo helpers
-├── docs/                         Data dictionary, relational schema, ER diagram, normalization proof,
-│                                 advanced DBMS topics, test cases, performance analysis, backup guide, step notes
-├── NimbusHost ER Diagram.html    Interactive crow's-foot ER diagram (open in a browser)
-├── NimbusHost_DBMS_Project_Blueprint.pdf
-├── NimbusHost_UI_Implementation_Guide.pdf
 └── README.md                     This file
 ```
 
@@ -206,7 +200,7 @@ node scripts/concurrencyDemo.js                           # concurrency and isol
 | `node scripts/smokeTest.js` | Call every endpoint as every role and report failures (section 12) |
 | `node scripts/integrityTests.js` | 29 database integrity and normalization tests, rolled back (section 12) |
 | `node scripts/concurrencyDemo.js` | Isolation levels, lost update, deadlock, SKIP LOCKED, quota race (section 12) |
-| `.\scripts\backup.ps1`, `.\scripts\restore.ps1` | Logical backup and restore (`docs/backup_and_recovery.md`) |
+| `.\scripts\backup.ps1`, `.\scripts\restore.ps1` | Logical backup and restore |
 
 ### How migrations work
 
@@ -265,7 +259,7 @@ An owner can add a team member only if that person already has a customer accoun
 
 ## 7. The database
 
-### 7.1 Schema (34 tables)
+### 7.1 Schema (35 tables)
 
 | Domain | Tables |
 |---|---|
@@ -280,14 +274,13 @@ An owner can add a team member only if that person already has a customer accoun
 | Governance | `audit_log`, `security_log` |
 | Analytics (star schema) | `dim_date`, `dim_org`, `dim_type`, `fact_usage_daily` (loaded by `sp_refresh_star_schema`) |
 
-The current ER diagram is `docs/er_diagram.md` (generated from the schema, renders on GitHub). The older interactive `NimbusHost ER Diagram.html` predates the `operating_systems` split. Dashed or missing lines mean logical links with no foreign key (the partitioned table). Also see `docs/data_dictionary.md`, `docs/relational_schema.md` and `docs/normalization.md`.
 
 ### 7.2 Design decisions
 
 - **Partitioned metering.** `usage_records` is `PARTITION BY RANGE COLUMNS(recorded_at)` with monthly partitions (Jul 2026 to Jun 2027, plus `pmax`). MySQL forbids foreign keys on partitioned tables, so integrity comes from `sp_record_usage` and a `BEFORE INSERT` trigger. `type_id` is stored at metering time so usage is priced correctly even after a resize.
 - **Soft deletes and immutability.** Instances, volumes, domains, organizations, invoices, payments, pricing rows and the audit log cannot be hard-deleted (the audit log and payments cannot be updated either). Triggers enforce this so billing history stays intact.
 - **Functional unique indexes.** `uq_inst_live_name` and `uq_vol_live_name` index `IF(status = 'terminated'/'deleted', NULL, name)`, so a name is unique among live resources and can be reused after termination, with no stored derived column. `auto_backup` is a real column; `sp_launch_instance` moves it out of the JSON `config`.
-- **Normalization.** `images` was split into `operating_systems` and `images` to remove the dependency `name -> os_family` (3NF/BCNF); every other derived value was removed too (invoice `tax`/`total`, line `amount`, usage `org_id`, `live_name`, `month_name`/`quarter`/`is_weekend`) and is computed by the views `v_invoices`, `v_invoice_items` and `v_usage_records` or the lookup tables `dim_month` and `dim_weekday`. The proof is in `docs/normalization.md`.
+- **Normalization.** `images` was split into `operating_systems` and `images` to remove the dependency `name -> os_family` (3NF/BCNF); every other derived value was removed too (invoice `tax`/`total`, line `amount`, usage `org_id`, `live_name`, `month_name`/`quarter`/`is_weekend`) and is computed by the views `v_invoices`, `v_invoice_items` and `v_usage_records` or the lookup tables `dim_month` and `dim_weekday`.
 - **Guarded denormalization.** `hosts.used_vcpu/ram/disk` are maintained by triggers, protected by `CHECK (used <= total)` and verified by `sp_check_consistency()`. Other cross-table summaries (`invoices.subtotal`, `daily_usage_summary`, the star schema) are rebuilt and checked by `sp_check_consistency()`.
 - **Money is `DECIMAL`**, never floating point.
 - **Rules raise `SQLSTATE 45000`** with readable messages. The API maps them to HTTP 400.
@@ -472,7 +465,7 @@ Admin, Performance Lab runs 10 benchmark queries (Q1 to Q10) under real `EXPLAIN
 ### Integrity tests (database rules)
 
 ```powershell
-node scripts/integrityTests.js | Tee-Object ..\docs\test_results_integrity.txt
+node scripts/integrityTests.js
 ```
 
 29 automated checks that the database itself enforces its rules: the `images` normalization, removed redundant indexes, append-only usage records, frozen invoice items, ticket rules (membership, assignee, closed is final), audit coverage, the star-schema ETL and partition maintenance. All fixtures are created in one transaction and rolled back, so your data is untouched (the partition test only adds empty future partitions). Output is PASS or FAIL per case.
@@ -480,14 +473,14 @@ node scripts/integrityTests.js | Tee-Object ..\docs\test_results_integrity.txt
 ### Concurrency and isolation demo
 
 ```powershell
-node scripts/concurrencyDemo.js | Tee-Object ..\docs\test_results_concurrency.txt
+node scripts/concurrencyDemo.js
 ```
 
-Uses real simultaneous connections to show a dirty read, a non-repeatable read, a lost update and its fix, a deadlock and its fix, `SKIP LOCKED`, and a quota race (6 launches at once against a 2-server quota must never exceed it). Details: `docs/advanced_dbms_topics.md`.
+Uses real simultaneous connections to show a dirty read, a non-repeatable read, a lost update and its fix, a deadlock and its fix, `SKIP LOCKED`, and a quota race (6 launches at once against a 2-server quota must never exceed it).
 
 ### Backup, restore and database security
 
-- `backend\scripts\backup.ps1` and `restore.ps1` make and restore consistent logical backups; `docs/backup_and_recovery.md` also explains point-in-time recovery with the binary log.
+- `backend\scripts\backup.ps1` and `restore.ps1` make and restore consistent logical backups.
 - `database/security/roles_and_grants.sql` (run by hand as root) creates five roles and accounts with least-privilege grants, including a column-level privilege, and lists the exact `command denied` errors to show in the report.
 
 ### Consistency check
@@ -564,24 +557,25 @@ This script deletes all rows from the application tables (including users) and s
 
 ---
 
-## 15. Documentation and deliverables
+## 15. Design notes
 
-| Item | File | Status |
+**Normalization (all 35 tables are in 3NF and BCNF).** Values that can be computed from other columns of the same row are not stored:
+
+| Table | Not stored | Where it comes from |
 |---|---|---|
-| Blueprint and UI guide | `NimbusHost_DBMS_Project_Blueprint.pdf`, `NimbusHost_UI_Implementation_Guide.pdf` | Done |
-| ER diagram | `docs/er_diagram.md` (generated, current); `NimbusHost ER Diagram.html` (older view) | Done |
-| Relational schema | `docs/relational_schema.md` | Done (generated from the schema) |
-| Data dictionary | `docs/data_dictionary.md` | Done (generated from the schema) |
-| Normalization proof | `docs/normalization.md` | Done |
-| Advanced DBMS topics | `docs/advanced_dbms_topics.md` | Done |
-| Backup and recovery | `docs/backup_and_recovery.md` | Done |
-| Step notes (pricing, scheduler and locking, storage and DNS concurrency) | `docs/step2_notes.md` to `step4_notes.md` | Done |
-| Test cases | `docs/test_cases.md` | Cases written; run the scripts and fill the Result column |
-| Performance analysis | `docs/performance_analysis.md` | Method written; fill in your measured numbers |
-| UI screenshots | `docs/screenshots/` | To capture |
-| Executive summary and presentation deck | - | To write |
+| `invoices` | `tax`, `total` | view `v_invoices`: `tax = ROUND(subtotal * tax_rate_pct / 100, 2)`, `total = subtotal + tax - credit_applied` |
+| `invoice_items` | `amount` | view `v_invoice_items`: `ROUND(quantity * unit_price, 2)` |
+| `usage_records` | `org_id` | view `v_usage_records` (joins `instances`) |
+| `instances`, `volumes` | `live_name` | functional unique index on `(org_id, IF(status = 'terminated'/'deleted', NULL, name))` |
+| `dim_date` | `month_name`, `quarter`, `is_weekend` | lookup tables `dim_month` and `dim_weekday` |
 
-After any schema change regenerate the dictionary, relational schema and ER diagram so they stay in sync with `database/01_schema.sql`.
+`usage_records` has no surrogate `usage_id`: its primary key is the natural key `(recorded_at, instance_id, metric)`, which also satisfies MySQL's rule that the partition column must be in the key, so every column depends on the whole key. The instance type in effect when usage was metered is not stored on the usage row (it depends only on instance and moment); it comes from `instance_type_history`, which the triggers on `instances` fill at launch and at every resize, and the view `v_usage_records` looks it up. `invoices.due_date` is an independent attribute (billing can extend it; the billing procedure uses 30 days by default).
+
+`images` was also split into `operating_systems` and `images` (`name -> os_family`). Cross-table summaries (`hosts.used_*`, `invoices.subtotal`, `daily_usage_summary`, the star schema) are not dependencies inside one table; triggers and `sp_check_consistency()` keep them correct.
+
+**Tests** (see section 12): `node scripts/integrityTests.js` (includes the 3NF checks N04 to N09), `node scripts/concurrencyDemo.js`, `node scripts/smokeTest.js`.
+
+**Still to prepare by the team (not code):** ER diagram, executive summary, presentation deck, UI screenshots, role allocation and the final report.
 
 ---
 
