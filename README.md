@@ -7,7 +7,7 @@ Built as the project for **AI203 - Database Management Systems**, Department of 
 | | |
 |---|---|
 | **Stack** | MySQL 8, Node.js 20 + Express 4, React 18 + Vite (plain JavaScript) |
-| **Database objects** | 31 tables, 25 stored procedures, 10 functions, 50 triggers, 20 views, 5 scheduled events |
+| **Database objects** | 34 tables, 27 stored procedures, 10 functions, 75 triggers, 25 views, 7 scheduled events |
 | **Analytics** | 20 SQL reports (window functions, recursive CTEs, ROLLUP, JSON_TABLE, full-text search) |
 | **Roles** | Super admin, Billing, Support, Customer (owner and member) |
 
@@ -44,6 +44,9 @@ Built as the project for **AI203 - Database Management Systems**, Department of 
 | Consistency auditing | `sp_check_consistency()` checks 11 cross-table invariants (host counters, invoice arithmetic, payments, orphan usage, quotas, price overlaps, credit sanity). |
 | Analytics | A star schema (`dim_date`, `dim_org`, `dim_type`, `fact_usage_daily`) plus 20 reports. |
 | Query optimization | A Performance Lab that runs real `EXPLAIN ANALYZE` comparisons with and without indexes, plus a bulk data generator. |
+| Normalization | Written normalization proof, a real decomposition (`images` into `operating_systems` and `images`), and the removal of every derived column, so all 34 relations are in 3NF (and BCNF) with no exceptions (`docs/normalization.md`). |
+| Concurrency | Row locking, `SKIP LOCKED`, lock ordering, deadlock handling, and a script that demonstrates every isolation anomaly with real connections. |
+| Database security and recovery | Roles, least-privilege grants and column-level privileges (`database/security/`), logical backups and point-in-time recovery. |
 
 ---
 
@@ -65,13 +68,14 @@ http://localhost:5173  -->  JWT auth, RBAC, Zod validation  -->  tables, trigger
 ```
 .
 ├── database/                     Numbered SQL files, applied in order by `npm run db:setup`
-│   ├── 01_schema.sql               31 tables, constraints, indexes, partitioning
+│   ├── 01_schema.sql               34 tables, constraints, indexes, partitioning, derived-value views
 │   ├── 02_functions.sql            10 stored functions
-│   ├── 03_procedures.sql           25 stored procedures (including sp_check_consistency)
-│   ├── 04_triggers.sql             50 triggers (rules, audit, immutability)
-│   ├── 05_views.sql                20 views (internal and tenant-scoped "my_*")
-│   ├── 06_events.sql               5 scheduled events
+│   ├── 03_procedures.sql           27 stored procedures (including sp_check_consistency, the star-schema ETL and partition maintenance)
+│   ├── 04_triggers.sql             75 triggers (rules, audit, immutability)
+│   ├── 05_views.sql                22 views (internal, tenant-scoped "my_*", images, star schema); 3 more derived-value views are at the end of 01_schema.sql
+│   ├── 06_events.sql               7 scheduled events
 │   ├── 07_seed.sql                 Reference data: tiers, orgs, regions, hosts, types, images, pricing, IP pool
+│   ├── security/roles_and_grants.sql  Database roles, accounts and least-privilege grants (run by hand)
 │   └── tests/phase1_tests.sql      Acceptance tests (destructive, see section 12)
 ├── backend/                      Express API
 │   ├── src/
@@ -81,12 +85,14 @@ http://localhost:5173  -->  JWT auth, RBAC, Zod validation  -->  tables, trigger
 │   │   ├── services/               auth.service.js, billing.service.js
 │   │   ├── validation/schemas.js   Zod request schemas
 │   │   └── lib/splitSql.js         SQL file splitter (understands DELIMITER blocks)
-│   ├── scripts/                    runSql, seedUsers, checkConnection, testSplitter, generateData, smokeTest
+│   ├── scripts/                    runSql, seedUsers, checkConnection, testSplitter, generateData, smokeTest,
+│   │                               integrityTests, concurrencyDemo, backup.ps1, restore.ps1
 │   └── .env.example
 ├── frontend/                     React (Vite) console
 │   └── src/ auth/  layout/  pages/ (admin, billing, support)  ui/  styles/  api.js  nav.js
 ├── simulator/                    Notes for the demo helpers
-├── docs/                         Step notes, blueprint PDF, deliverables index
+├── docs/                         Data dictionary, relational schema, ER diagram, normalization proof,
+│                                 advanced DBMS topics, test cases, performance analysis, backup guide, step notes
 ├── NimbusHost ER Diagram.html    Interactive crow's-foot ER diagram (open in a browser)
 ├── NimbusHost_DBMS_Project_Blueprint.pdf
 ├── NimbusHost_UI_Implementation_Guide.pdf
@@ -181,6 +187,8 @@ cd backend
 node scripts/generateData.js                              # about 90,000 usage rows
 node scripts/generateData.js --instances=100 --days=365   # about 1,000,000 usage rows
 node scripts/smokeTest.js                                 # backend must be running
+node scripts/integrityTests.js                            # database rules, rolled back
+node scripts/concurrencyDemo.js                           # concurrency and isolation demo
 ```
 
 ### Backend scripts
@@ -196,6 +204,9 @@ node scripts/smokeTest.js                                 # backend must be runn
 | `npm run test:sql-splitter` | Self-test for the SQL statement splitter |
 | `node scripts/generateData.js` | Bulk test-data generator (section 12) |
 | `node scripts/smokeTest.js` | Call every endpoint as every role and report failures (section 12) |
+| `node scripts/integrityTests.js` | 29 database integrity and normalization tests, rolled back (section 12) |
+| `node scripts/concurrencyDemo.js` | Isolation levels, lost update, deadlock, SKIP LOCKED, quota race (section 12) |
+| `.\scripts\backup.ps1`, `.\scripts\restore.ps1` | Logical backup and restore (`docs/backup_and_recovery.md`) |
 
 ### How migrations work
 
@@ -236,6 +247,7 @@ All backend settings live in `backend/.env`. It is already in `.gitignore`; neve
 | Billing | `billing@nimbus.test` | `billing123` | `/billing` |
 | Customer owner (Acme Robotics) | `owner@acme.test` | `customer123` | `/` |
 | Customer member (Acme Robotics) | `dev@acme.test` | `customer123` | `/` |
+| Load-test owner (created by `generateData.js`) | `owner@loadtest.test` | `LoadTest123!` | `/` |
 
 New customers can register at `/register` (organization name, full name, email, password of at least 12 characters). That creates an organization on the Starter tier (or Free) and makes the registrant its owner.
 
@@ -253,12 +265,12 @@ An owner can add a team member only if that person already has a customer accoun
 
 ## 7. The database
 
-### 7.1 Schema (31 tables)
+### 7.1 Schema (34 tables)
 
 | Domain | Tables |
 |---|---|
 | Identity and tenancy | `account_tiers`, `organizations` (self-referencing parent for org hierarchy), `users`, `org_members`, `api_keys`, `refresh_tokens` |
-| Infrastructure and catalog | `regions`, `hosts`, `instance_types`, `images`, `pricing` (temporal) |
+| Infrastructure and catalog | `regions`, `hosts`, `instance_types`, `operating_systems`, `images`, `pricing` (temporal) |
 | Compute | `instances`, `ip_addresses` |
 | Storage | `volumes`, `snapshots` |
 | Network | `domains`, `dns_records` |
@@ -266,16 +278,17 @@ An owner can add a team member only if that person already has a customer accoun
 | Billing | `invoices`, `invoice_items`, `payments`, `billing_errors` |
 | Support | `tickets`, `ticket_messages` |
 | Governance | `audit_log`, `security_log` |
-| Analytics (star schema) | `dim_date`, `dim_org`, `dim_type`, `fact_usage_daily` |
+| Analytics (star schema) | `dim_date`, `dim_org`, `dim_type`, `fact_usage_daily` (loaded by `sp_refresh_star_schema`) |
 
-The interactive ER diagram is `NimbusHost ER Diagram.html`. Open it in a browser and click a table to highlight its relationships. Dashed lines are logical links with no foreign key (the partitioned table).
+The current ER diagram is `docs/er_diagram.md` (generated from the schema, renders on GitHub). The older interactive `NimbusHost ER Diagram.html` predates the `operating_systems` split. Dashed or missing lines mean logical links with no foreign key (the partitioned table). Also see `docs/data_dictionary.md`, `docs/relational_schema.md` and `docs/normalization.md`.
 
 ### 7.2 Design decisions
 
 - **Partitioned metering.** `usage_records` is `PARTITION BY RANGE COLUMNS(recorded_at)` with monthly partitions (Jul 2026 to Jun 2027, plus `pmax`). MySQL forbids foreign keys on partitioned tables, so integrity comes from `sp_record_usage` and a `BEFORE INSERT` trigger. `type_id` is stored at metering time so usage is priced correctly even after a resize.
 - **Soft deletes and immutability.** Instances, volumes, domains, organizations, invoices, payments, pricing rows and the audit log cannot be hard-deleted (the audit log and payments cannot be updated either). Triggers enforce this so billing history stays intact.
-- **Generated columns.** `live_name` becomes `NULL` once a resource is terminated, so a `UNIQUE` key still allows reusing names. `auto_backup` is derived from the instance's JSON `config`.
-- **Guarded denormalization.** `hosts.used_vcpu/ram/disk` are maintained by triggers, protected by `CHECK (used <= total)` and verified by `sp_check_consistency()`. `usage_records.org_id` is stored to allow partition-friendly tenant queries.
+- **Functional unique indexes.** `uq_inst_live_name` and `uq_vol_live_name` index `IF(status = 'terminated'/'deleted', NULL, name)`, so a name is unique among live resources and can be reused after termination, with no stored derived column. `auto_backup` is a real column; `sp_launch_instance` moves it out of the JSON `config`.
+- **Normalization.** `images` was split into `operating_systems` and `images` to remove the dependency `name -> os_family` (3NF/BCNF); every other derived value was removed too (invoice `tax`/`total`, line `amount`, usage `org_id`, `live_name`, `month_name`/`quarter`/`is_weekend`) and is computed by the views `v_invoices`, `v_invoice_items` and `v_usage_records` or the lookup tables `dim_month` and `dim_weekday`. The proof is in `docs/normalization.md`.
+- **Guarded denormalization.** `hosts.used_vcpu/ram/disk` are maintained by triggers, protected by `CHECK (used <= total)` and verified by `sp_check_consistency()`. Other cross-table summaries (`invoices.subtotal`, `daily_usage_summary`, the star schema) are rebuilt and checked by `sp_check_consistency()`.
 - **Money is `DECIMAL`**, never floating point.
 - **Rules raise `SQLSTATE 45000`** with readable messages. The API maps them to HTTP 400.
 
@@ -283,7 +296,7 @@ The interactive ER diagram is `NimbusHost ER Diagram.html`. Open it in a browser
 
 `fn_hourly_price`, `fn_org_running_instances`, `fn_org_active_instances`, `fn_org_quota_left`, `fn_org_storage_used`, `fn_org_storage_left`, `fn_instance_volume_count`, `fn_invoice_balance`, `fn_host_utilization`, `fn_current_org_id`
 
-### 7.4 Stored procedures (25)
+### 7.4 Stored procedures (27)
 
 | Group | Procedures |
 |---|---|
@@ -292,11 +305,12 @@ The interactive ER diagram is `NimbusHost ER Diagram.html`. Open it in a browser
 | Storage | `sp_create_volume`, `sp_attach_volume`, `sp_detach_volume`, `sp_resize_volume`, `sp_delete_volume`, `sp_take_snapshot`, `sp_restore_snapshot`, `sp_delete_snapshot` |
 | Network | `sp_register_domain`, `sp_renew_domain`, `sp_validate_dns_record` |
 | Pricing | `sp_assert_no_price_overlap`, `sp_set_price` |
-| Maintenance | `sp_rollup_daily_usage`, `sp_drop_old_partitions`, `sp_check_consistency` |
+| Maintenance | `sp_rollup_daily_usage`, `sp_drop_old_partitions`, `sp_add_future_partitions`, `sp_check_consistency` |
+| Analytics (ETL) | `sp_refresh_star_schema` |
 
 Concurrency notes: storage procedures lock the organization row (`SELECT ... FOR UPDATE`) before checking quota, so two simultaneous requests cannot both squeak under the limit. `sp_set_instance_status` locks the instance row to serialize state changes.
 
-### 7.5 Triggers (50)
+### 7.5 Triggers (75)
 
 | Table | Behaviour |
 |---|---|
@@ -309,13 +323,18 @@ Concurrency notes: storage procedures lock the organization row (`SELECT ... FOR
 | `organizations`, `users`, `org_members`, `api_keys` | Audit; organization delete blocked |
 | `usage_records` | Referential checks in place of foreign keys |
 | `audit_log` | Update and delete blocked (append-only) |
+| `usage_records` | Also append-only: update and delete are blocked |
+| `invoice_items` | Can only change while the invoice is a draft |
+| `tickets`, `ticket_messages` | Creator must belong to the organization, assignee must be support staff, closed is final, sender must be a member or staff; audited |
+| `account_tiers`, `regions`, `instance_types`, `operating_systems`, `images` | Audit of insert, update and delete |
 
-### 7.6 Views (20)
+### 7.6 Views (22)
 
+- **Catalog and analytics:** `v_images` (image with its operating system), `v_star_usage_monthly` (star schema)
 - **Internal and reporting:** `v_host_capacity`, `v_instances`, `v_running_instances`, `v_org_quota`, `v_current_pricing`, `v_pricing_history`, `v_volumes`, `v_snapshots`, `v_org_storage`, `v_domains`, `v_org_ips`, `v_org_monthly_cost`, `v_overdue_invoices`, `v_revenue_by_region`, `v_ticket_sla`
 - **Tenant-scoped (`v_my_*`):** `v_my_instances`, `v_my_volumes`, `v_my_invoices`, `v_my_tickets`, `v_my_usage`. They filter by `fn_current_org_id()` so a customer session only sees its own rows.
 
-### 7.7 Scheduled events (5)
+### 7.7 Scheduled events (7)
 
 They need `event_scheduler = ON`.
 
@@ -325,7 +344,9 @@ They need `event_scheduler = ON`.
 | `ev_nightly_rollup` | Daily 00:15 | Aggregates yesterday's usage into `daily_usage_summary` |
 | `ev_monthly_invoicing` | 1st of month, 01:00 | Runs `sp_run_monthly_billing` for the previous month |
 | `ev_suspend_overdue` | Daily 06:00 | Marks past-due invoices `overdue`; suspends organizations overdue by more than 30 days and their running instances |
-| `ev_purge_usage` | Monthly | Drops usage partitions older than 12 months |
+| `ev_purge_usage` | Monthly | Drops usage partitions older than 24 months |
+| `ev_refresh_star` | Daily 00:30 | Refreshes the star schema for yesterday and today |
+| `ev_add_partitions` | Monthly | Keeps monthly usage partitions ready for the next 6 months |
 
 The 1-minute metering interval is accelerated on purpose so dashboards move during a demo. For real hourly semantics change it to hourly and the quantity to `1.0`.
 
@@ -448,13 +469,34 @@ Creates a "LoadTest Corp" organization and fills it through the normal rules: se
 
 Admin, Performance Lab runs 10 benchmark queries (Q1 to Q10) under real `EXPLAIN ANALYZE`. Each query runs once as warm-up and then 3 timed runs, once with its index and once with the index ignored (`IGNORE INDEX`, a `LIKE` scan for full-text, or a predicate that blocks partition pruning). The page shows the real plan text, the median execution time, rows read and the measured speed-up. Nothing is dropped or hidden in the database, so it is safe to run on a shared system. Run the data generator first; on tiny tables MySQL scans either way and the times look alike.
 
+### Integrity tests (database rules)
+
+```powershell
+node scripts/integrityTests.js | Tee-Object ..\docs\test_results_integrity.txt
+```
+
+29 automated checks that the database itself enforces its rules: the `images` normalization, removed redundant indexes, append-only usage records, frozen invoice items, ticket rules (membership, assignee, closed is final), audit coverage, the star-schema ETL and partition maintenance. All fixtures are created in one transaction and rolled back, so your data is untouched (the partition test only adds empty future partitions). Output is PASS or FAIL per case.
+
+### Concurrency and isolation demo
+
+```powershell
+node scripts/concurrencyDemo.js | Tee-Object ..\docs\test_results_concurrency.txt
+```
+
+Uses real simultaneous connections to show a dirty read, a non-repeatable read, a lost update and its fix, a deadlock and its fix, `SKIP LOCKED`, and a quota race (6 launches at once against a 2-server quota must never exceed it). Details: `docs/advanced_dbms_topics.md`.
+
+### Backup, restore and database security
+
+- `backend\scripts\backup.ps1` and `restore.ps1` make and restore consistent logical backups; `docs/backup_and_recovery.md` also explains point-in-time recovery with the binary log.
+- `database/security/roles_and_grants.sql` (run by hand as root) creates five roles and accounts with least-privilege grants, including a column-level privilege, and lists the exact `command denied` errors to show in the report.
+
 ### Consistency check
 
 Admin, Consistency (or `GET /api/admin/consistency-check`) runs `sp_check_consistency()` and reports any violation of these 11 invariants:
 
 1. Host `used_*` counters equal the sum of non-terminated instances
 2. No host has `used > total`
-3. Invoice totals match items + tax - credit
+3. Invoice subtotals match the sum of their items, and no invoice total is negative
 4. Paid invoices are fully covered by payments, unpaid ones are not
 5. No orphan usage rows
 6. No running instance on a retired or maintenance host
@@ -509,12 +551,12 @@ This script deletes all rows from the application tables (including users) and s
 ## 14. Known limitations
 
 - **Not billed yet:** storage, egress, IP addresses and domains. There is no rate table for them. Tax is fixed at 18% and the tier `discount_pct` is not applied.
-- **Concurrency:** two launches at the same moment can exceed an organization's instance quota (volumes already lock the org row); `SKIP LOCKED` can report "No capacity" while a locked host would fit.
-- **Metering:** the demo event records 0.017 instead of 1/60 of an hour, and its error handler swallows errors (check `billing_errors`).
+- **Concurrency:** `SKIP LOCKED` can report "No capacity" while a locked host would fit. The quota check is now serialized per organization, so the earlier over-quota race is closed (demo C6).
+- **Metering:** the demo event records 0.017 instead of 1/60 of an hour (about 2% over), because the quantity column has three decimals; its error handler swallows errors (check `billing_errors`).
 - **Credits:** there is no credit ledger table; the history screen reads `audit_log`.
-- **Database roles:** the four DB connection pools use the same account unless you set the `DB_*_USER` variables and create real grants. No grant scripts are included.
+- **Database roles:** the API connects with one account unless you set the `DB_*_USER` variables. `database/security/roles_and_grants.sql` shows the role model but is not wired into the API's queries.
 - **API keys** can be created and revoked but do not authenticate requests yet.
-- **Data retention:** `ev_purge_usage` drops partitions older than 12 months, which removes usage that old invoices were built from. Partitions are defined through June 2027; add more before then (`pmax` is a safety net).
+- **Data retention:** usage partitions older than 24 months are dropped by `ev_purge_usage`. New months are added by `ev_add_partitions`, but both events need `event_scheduler = ON`.
 - **Security hardening still open:** `/api/health` is public and shows the MySQL version; rate limiting is in memory per process; registration has no email verification.
 - **Per-instance telemetry** charts are not available; the Instance Detail usage tab shows a note.
 - **Team page** adds existing accounts only; a user in several organizations always gets the oldest one.
@@ -524,17 +566,22 @@ This script deletes all rows from the application tables (including users) and s
 
 ## 15. Documentation and deliverables
 
-| Item | Status |
-|---|---|
-| Blueprint (`NimbusHost_DBMS_Project_Blueprint.pdf`, also in `docs/`) | Done |
-| UI guide (`NimbusHost_UI_Implementation_Guide.pdf`) | Done |
-| ER diagram (`NimbusHost ER Diagram.html`) | Done |
-| Step notes (`docs/step2_notes.md` to `step4_notes.md`): pricing, scheduler and locking, storage and DNS concurrency | Done |
-| Relational schema, data dictionary, 3NF normalization proof | To write (`docs/`) |
-| Test cases and execution results | To write (`docs/`) |
-| Performance analysis (use real Performance Lab numbers) | To write (`docs/performance_analysis.md`) |
-| UI screenshots | To capture (`docs/screenshots/`) |
-| Executive summary and presentation deck | To write |
+| Item | File | Status |
+|---|---|---|
+| Blueprint and UI guide | `NimbusHost_DBMS_Project_Blueprint.pdf`, `NimbusHost_UI_Implementation_Guide.pdf` | Done |
+| ER diagram | `docs/er_diagram.md` (generated, current); `NimbusHost ER Diagram.html` (older view) | Done |
+| Relational schema | `docs/relational_schema.md` | Done (generated from the schema) |
+| Data dictionary | `docs/data_dictionary.md` | Done (generated from the schema) |
+| Normalization proof | `docs/normalization.md` | Done |
+| Advanced DBMS topics | `docs/advanced_dbms_topics.md` | Done |
+| Backup and recovery | `docs/backup_and_recovery.md` | Done |
+| Step notes (pricing, scheduler and locking, storage and DNS concurrency) | `docs/step2_notes.md` to `step4_notes.md` | Done |
+| Test cases | `docs/test_cases.md` | Cases written; run the scripts and fill the Result column |
+| Performance analysis | `docs/performance_analysis.md` | Method written; fill in your measured numbers |
+| UI screenshots | `docs/screenshots/` | To capture |
+| Executive summary and presentation deck | - | To write |
+
+After any schema change regenerate the dictionary, relational schema and ER diagram so they stay in sync with `database/01_schema.sql`.
 
 ---
 

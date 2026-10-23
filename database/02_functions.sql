@@ -107,7 +107,8 @@ BEGIN
   DECLARE v_total DECIMAL(12,2) DEFAULT NULL;
   DECLARE v_paid DECIMAL(12,2) DEFAULT 0.00;
 
-  SELECT total INTO v_total
+  -- total is derived (subtotal + tax - credit); it is not stored, to keep invoices in 3NF
+  SELECT subtotal + ROUND(subtotal * tax_rate_pct / 100, 2) - credit_applied INTO v_total
   FROM invoices
   WHERE invoice_id = p_invoice;
 

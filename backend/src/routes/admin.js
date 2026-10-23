@@ -23,7 +23,7 @@ const handleConsistencyCheck = async (req, res, next) => {
       { id: 'chk_2', key: 'host_overbooked', name: 'Hypervisor Overbooking Verification', details: 'No physical hypervisor host exceeds 100% capacity in compute or storage.' },
       { id: 'chk_3', key: 'org_quota', name: 'Tenant Tier Quota Compliance', details: 'No tenant exceeds allocated compute instance count or persistent storage quotas.' },
       { id: 'chk_4', key: 'orphan_ip', name: 'Public IP Pool Orphan Verification', details: 'No IP is allocated to a terminated or nonexistent instance ID.' },
-      { id: 'chk_5', key: 'invoice_total', name: 'Invoice Item Arithmetic & Total Integrity', details: 'CHECK total = subtotal + tax - credit_applied holds across 100% of invoice records.' },
+      { id: 'chk_5', key: 'invoice_total', name: 'Invoice Item Arithmetic & Total Integrity', details: 'Invoice total is derived (subtotal + tax - credit), never negative, and subtotal equals the sum of line items.' },
       { id: 'chk_6', key: 'partition', name: 'Partition Boundary Alignment (usage_records)', details: 'RANGE COLUMNS monthly partitions are active and properly bounded.' },
     ];
 
@@ -141,25 +141,25 @@ router.post('/simulate/usage', validate({ body: simulateUsageSchema }), async (r
         for (const inst of instances) {
           // 1. CPU hour usage
           await conn.execute(
-            `INSERT INTO usage_records(recorded_at, instance_id, org_id, type_id, metric, quantity)
-             VALUES (?, ?, ?, ?, 'cpu_hour', 1.000)`,
-            [formattedDate, inst.instance_id, inst.org_id, inst.type_id]
+            `INSERT INTO usage_records(recorded_at, instance_id, type_id, metric, quantity)
+             VALUES (?, ?, ?, 'cpu_hour', 1.000)`,
+            [formattedDate, inst.instance_id, inst.type_id]
           );
 
           // 2. Storage GB usage (random between 10 and 50)
           const storageQty = (10 + Math.random() * 40).toFixed(3);
           await conn.execute(
-            `INSERT INTO usage_records(recorded_at, instance_id, org_id, type_id, metric, quantity)
-             VALUES (?, ?, ?, ?, 'storage_gb', ?)`,
-            [formattedDate, inst.instance_id, inst.org_id, inst.type_id, storageQty]
+            `INSERT INTO usage_records(recorded_at, instance_id, type_id, metric, quantity)
+             VALUES (?, ?, ?, 'storage_gb', ?)`,
+            [formattedDate, inst.instance_id, inst.type_id, storageQty]
           );
 
           // 3. Egress GB usage (random between 0.1 and 5.0)
           const egressQty = (0.1 + Math.random() * 4.9).toFixed(3);
           await conn.execute(
-            `INSERT INTO usage_records(recorded_at, instance_id, org_id, type_id, metric, quantity)
-             VALUES (?, ?, ?, ?, 'egress_gb', ?)`,
-            [formattedDate, inst.instance_id, inst.org_id, inst.type_id, egressQty]
+            `INSERT INTO usage_records(recorded_at, instance_id, type_id, metric, quantity)
+             VALUES (?, ?, ?, 'egress_gb', ?)`,
+            [formattedDate, inst.instance_id, inst.type_id, egressQty]
           );
 
           insertedCount += 3;
@@ -195,7 +195,7 @@ const BENCHMARKS = {
     indexName: 'idx_usage_cover',
     table: 'usage_records',
     withIndex: (c) => `SELECT metric, SUM(quantity) FROM usage_records WHERE instance_id = ${c.instanceId} AND recorded_at >= '2026-01-01' AND recorded_at < '2027-01-01' GROUP BY metric`,
-    withoutIndex: (c) => `SELECT metric, SUM(quantity) FROM usage_records IGNORE INDEX (idx_usage_instance, idx_usage_org, idx_usage_cover) WHERE instance_id = ${c.instanceId} AND recorded_at >= '2026-01-01' AND recorded_at < '2027-01-01' GROUP BY metric`,
+    withoutIndex: (c) => `SELECT metric, SUM(quantity) FROM usage_records IGNORE INDEX (idx_usage_time, idx_usage_cover) WHERE instance_id = ${c.instanceId} AND recorded_at >= '2026-01-01' AND recorded_at < '2027-01-01' GROUP BY metric`,
   },
   Q2: {
     name: 'Q2: Running instances of an organization',
@@ -211,7 +211,7 @@ const BENCHMARKS = {
     indexName: 'idx_inv_due',
     table: 'invoices',
     withIndex: () => `SELECT * FROM invoices WHERE status = 'issued' AND due_date < CURRENT_DATE`,
-    withoutIndex: () => `SELECT * FROM invoices IGNORE INDEX (idx_inv_status, idx_inv_due) WHERE status = 'issued' AND due_date < CURRENT_DATE`,
+    withoutIndex: () => `SELECT * FROM invoices IGNORE INDEX (idx_inv_due) WHERE status = 'issued' AND due_date < CURRENT_DATE`,
   },
   Q4: {
     name: 'Q4: Invoice with items and payments (3-table join)',
@@ -234,8 +234,8 @@ const BENCHMARKS = {
     description: 'A plain date range lets MySQL read only one RANGE partition. Wrapping the column in DATE_FORMAT() blocks pruning, so every partition is scanned.',
     indexName: 'PARTITION BY RANGE (recorded_at)',
     table: 'usage_records',
-    withIndex: (c) => `SELECT org_id, SUM(quantity) FROM usage_records WHERE recorded_at >= '${c.monthStart}' AND recorded_at < '${c.monthEnd}' GROUP BY org_id`,
-    withoutIndex: (c) => `SELECT org_id, SUM(quantity) FROM usage_records WHERE DATE_FORMAT(recorded_at, '%Y-%m') = '${c.monthStart.slice(0, 7)}' GROUP BY org_id`,
+    withIndex: (c) => `SELECT i.org_id, SUM(u.quantity) FROM usage_records u JOIN instances i ON i.instance_id = u.instance_id WHERE u.recorded_at >= '${c.monthStart}' AND u.recorded_at < '${c.monthEnd}' GROUP BY i.org_id`,
+    withoutIndex: (c) => `SELECT i.org_id, SUM(u.quantity) FROM usage_records u JOIN instances i ON i.instance_id = u.instance_id WHERE DATE_FORMAT(u.recorded_at, '%Y-%m') = '${c.monthStart.slice(0, 7)}' GROUP BY i.org_id`,
   },
   Q7: {
     name: 'Q7: Instances with auto backup enabled',
@@ -258,7 +258,7 @@ const BENCHMARKS = {
     description: 'Aggregation with GROUP BY and ORDER BY. Shown as a single plan, with no index comparison.',
     indexName: '-',
     table: 'invoices',
-    withIndex: () => `SELECT org_id, SUM(total) AS spend FROM invoices WHERE period_start >= '2026-07-01' GROUP BY org_id ORDER BY spend DESC LIMIT 10`,
+    withIndex: () => `SELECT org_id, SUM(subtotal + ROUND(subtotal * tax_rate_pct / 100, 2) - credit_applied) AS spend FROM invoices WHERE period_start >= '2026-07-01' GROUP BY org_id ORDER BY spend DESC LIMIT 10`,
     withoutIndex: null,
   },
   Q10: {
@@ -278,7 +278,7 @@ const toDate = (v, fallback) => (/^\d{4}-\d{2}-\d{2}$/.test(String(v)) ? String(
 async function loadContext(conn) {
   const ctx = { instanceId: 1, orgId: 1, invoiceId: 1, regionId: 1, monthStart: '2026-10-01', monthEnd: '2026-11-01' };
 
-  const [usage] = await conn.query('SELECT instance_id, org_id FROM usage_records LIMIT 1');
+  const [usage] = await conn.query('SELECT u.instance_id, i.org_id FROM usage_records u JOIN instances i ON i.instance_id = u.instance_id LIMIT 1');
   if (usage[0]) {
     ctx.instanceId = toInt(usage[0].instance_id, 1);
     ctx.orgId = toInt(usage[0].org_id, 1);

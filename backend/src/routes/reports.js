@@ -20,8 +20,8 @@ router.get('/R1', requireRole('super_admin', 'billing'), async (req, res, next) 
          JOIN hosts h ON h.region_id = r.region_id
          JOIN instances i ON i.host_id = h.host_id
          JOIN instance_types t ON t.type_id = i.type_id
-         JOIN invoice_items ii ON ii.instance_id = i.instance_id
-         JOIN invoices inv ON inv.invoice_id = ii.invoice_id AND inv.status <> 'void'
+         JOIN v_invoice_items ii ON ii.instance_id = i.instance_id
+         JOIN v_invoices inv ON inv.invoice_id = ii.invoice_id AND inv.status <> 'void'
          GROUP BY r.name, t.name WITH ROLLUP`
       );
       return result;
@@ -41,7 +41,7 @@ router.get('/R2', requireRole('super_admin', 'billing'), async (req, res, next) 
            SELECT o.org_id, o.name AS org_name,
                   ROUND(COALESCE(SUM(inv.total), 0), 2) AS total_spend
            FROM organizations o
-           LEFT JOIN invoices inv ON inv.org_id = o.org_id AND inv.status <> 'void'
+           LEFT JOIN v_invoices inv ON inv.org_id = o.org_id AND inv.status <> 'void'
            GROUP BY o.org_id, o.name
          )
          SELECT org_id, org_name, total_spend,
@@ -67,7 +67,7 @@ router.get('/R3', requireRole('super_admin', 'billing'), async (req, res, next) 
         `WITH monthly_rev AS (
            SELECT DATE_FORMAT(period_start, '%Y-%m') AS month,
                   ROUND(SUM(total), 2) AS revenue
-           FROM invoices
+           FROM v_invoices
            WHERE status IN ('issued', 'paid', 'overdue')
            GROUP BY DATE_FORMAT(period_start, '%Y-%m')
          )
@@ -98,7 +98,7 @@ router.get('/R4', async (req, res, next) => {
         FROM (
           SELECT u.org_id, DATE(u.recorded_at) AS usage_date,
                  ROUND(SUM(CASE WHEN u.metric = 'cpu_hour' THEN u.quantity * fn_hourly_price(u.type_id, DATE(u.recorded_at)) ELSE u.quantity * 0.05 END), 2) AS daily_cost
-          FROM usage_records u
+          FROM v_usage_records u
           ${isCustomer ? 'WHERE u.org_id = ?' : ''}
           GROUP BY u.org_id, DATE(u.recorded_at)
         ) daily
@@ -121,7 +121,7 @@ router.get('/R5', requireRole('super_admin', 'billing'), async (req, res, next) 
            SELECT o.org_id, o.name AS org_name,
                   COALESCE(SUM(inv.total), 0.00) AS total_spend
            FROM organizations o
-           LEFT JOIN invoices inv ON inv.org_id = o.org_id AND inv.status <> 'void'
+           LEFT JOIN v_invoices inv ON inv.org_id = o.org_id AND inv.status <> 'void'
            GROUP BY o.org_id, o.name
          )
          SELECT org_id, org_name, total_spend,
@@ -157,7 +157,7 @@ router.get('/R6', async (req, res, next) => {
          SELECT ot.org_id, ot.name, ot.parent_org_id, ot.level,
                 COALESCE(SUM(inv.total), 0.00) AS total_cost
          FROM org_tree ot
-         LEFT JOIN invoices inv ON inv.org_id = ot.org_id AND inv.status <> 'void'
+         LEFT JOIN v_invoices inv ON inv.org_id = ot.org_id AND inv.status <> 'void'
          GROUP BY ot.org_id, ot.name, ot.parent_org_id, ot.level
          ORDER BY ot.level, ot.name`,
         [targetOrg]
@@ -235,12 +235,12 @@ router.get('/R9', requireRole('super_admin', 'billing'), async (req, res, next) 
       const [result] = await conn.execute(
         `WITH avg_spend AS (
            SELECT AVG(org_total) AS threshold FROM (
-             SELECT SUM(total) AS org_total FROM invoices WHERE status <> 'void' GROUP BY org_id
+             SELECT SUM(total) AS org_total FROM v_invoices WHERE status <> 'void' GROUP BY org_id
            ) x
          )
          SELECT o.org_id, o.name AS org_name, ROUND(SUM(inv.total), 2) AS total_spend
          FROM organizations o
-         JOIN invoices inv ON inv.org_id = o.org_id AND inv.status <> 'void'
+         JOIN v_invoices inv ON inv.org_id = o.org_id AND inv.status <> 'void'
          WHERE NOT EXISTS (
            SELECT 1 FROM tickets t WHERE t.org_id = o.org_id
          )
@@ -270,7 +270,7 @@ router.get('/R10', requireRole('super_admin', 'billing'), async (req, res, next)
                 COUNT(*) AS invoice_count,
                 ROUND(SUM(total), 2) AS total_overdue_amount,
                 ROUND(SUM(fn_invoice_balance(invoice_id)), 2) AS outstanding_balance
-         FROM invoices
+         FROM v_invoices
          WHERE status = 'overdue' OR (status = 'issued' AND due_date < CURRENT_DATE)
          GROUP BY aging_bucket
          ORDER BY MIN(DATEDIFF(CURRENT_DATE, due_date)) ASC`
@@ -316,7 +316,7 @@ router.get('/R12', async (req, res, next) => {
                JSON_UNQUOTE(JSON_EXTRACT(i.config, '$.tags.role')) AS role_tag,
                i.auto_backup, i.status
         FROM instances i
-        JOIN images im ON im.image_id = i.image_id
+        JOIN v_images im ON im.image_id = i.image_id
         ${isCustomer ? 'WHERE i.org_id = ?' : ''}
         ORDER BY im.os_family, i.instance_id`;
       const [result] = await conn.execute(sql, params);
@@ -341,7 +341,7 @@ router.get('/R13', requireRole('super_admin', 'billing'), async (req, res, next)
                 p_old.price_per_hour AS historical_price,
                 ROUND(SUM(u.quantity) * p_old.price_per_hour, 2) AS cost_at_historical_price,
                 ROUND(SUM(u.quantity) * (p_current.price_per_hour - p_old.price_per_hour), 2) AS price_delta
-         FROM usage_records u
+         FROM v_usage_records u
          JOIN instance_types t ON t.type_id = u.type_id
          JOIN pricing p_current ON p_current.type_id = t.type_id AND p_current.valid_to IS NULL
          JOIN pricing p_old ON p_old.type_id = t.type_id AND p_old.valid_to IS NOT NULL
@@ -446,7 +446,7 @@ router.get('/R17', async (req, res, next) => {
                ROUND(SUM(CASE WHEN metric = 'storage_gb' THEN quantity * 0.05 ELSE 0 END), 2) AS storage_cost,
                ROUND(SUM(CASE WHEN metric = 'egress_gb' THEN quantity * 0.05 ELSE 0 END), 2) AS network_cost,
                ROUND(SUM(CASE WHEN metric = 'cpu_hour' THEN quantity * fn_hourly_price(type_id, DATE(recorded_at)) ELSE quantity * 0.05 END), 2) AS total_cost
-        FROM usage_records u
+        FROM v_usage_records u
         JOIN organizations o ON o.org_id = u.org_id
         ${isCustomer ? 'WHERE u.org_id = ?' : ''}
         GROUP BY DATE_FORMAT(recorded_at, '%Y-%m'), o.name
@@ -469,8 +469,8 @@ router.get('/R18', requireRole('super_admin', 'billing'), async (req, res, next)
                 DATE_FORMAT(u.recorded_at, '%Y-%m') AS usage_month,
                 COUNT(u.usage_id) AS usage_records_count
          FROM organizations o
-         JOIN usage_records u ON u.org_id = o.org_id
-         LEFT JOIN invoices inv ON inv.org_id = o.org_id
+         JOIN v_usage_records u ON u.org_id = o.org_id
+         LEFT JOIN v_invoices inv ON inv.org_id = o.org_id
                                AND DATE_FORMAT(inv.period_start, '%Y-%m') = DATE_FORMAT(u.recorded_at, '%Y-%m')
          WHERE inv.invoice_id IS NULL
          GROUP BY o.org_id, o.name, DATE_FORMAT(u.recorded_at, '%Y-%m')`
@@ -491,7 +491,7 @@ router.get('/R19', requireRole('super_admin', 'billing'), async (req, res, next)
         `SELECT invoice_id, org_id, total,
                 ROUND(PERCENT_RANK() OVER (ORDER BY total), 3) AS \`percent_rank\`,
                 ROUND(CUME_DIST() OVER (ORDER BY total), 3) AS \`cume_dist\`
-         FROM invoices
+         FROM v_invoices
          WHERE status <> 'void'
          ORDER BY total DESC`
       );
@@ -512,7 +512,7 @@ router.get('/R20', async (req, res, next) => {
     const rows = await withDb(req, async (conn) => {
       if (invoiceId && isCustomer) {
         const [inv] = await conn.execute(
-          'SELECT org_id FROM invoices WHERE invoice_id = ?',
+          'SELECT org_id FROM v_invoices WHERE invoice_id = ?',
           [invoiceId]
         );
         if (!inv[0] || inv[0].org_id !== req.user.org_id) {

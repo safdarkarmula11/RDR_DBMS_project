@@ -13,9 +13,12 @@
 //   --days=N        days of usage history (default 90, max 700)
 //   --tickets=N     support tickets with messages (default 300)
 //
-// It is safe to run again: servers, invoices and tickets are not duplicated.
+// It also creates a login for that organization (owner@loadtest.test / LoadTest123!), fills the
+// star schema (sp_refresh_star_schema), and is safe to run again: servers, invoices and tickets
+// are not duplicated.
 // Usage rows are only generated when the organization has none yet.
 
+import bcrypt from 'bcryptjs';
 import { pool } from '../src/db.js';
 
 const args = Object.fromEntries(
@@ -84,7 +87,7 @@ async function launchInstances(orgId) {
 }
 
 async function generateUsage(orgId, instances) {
-  const [existing] = await pool.query('SELECT COUNT(*) AS c FROM usage_records WHERE org_id = ?', [orgId]);
+  const [existing] = await pool.query('SELECT COUNT(*) AS c FROM v_usage_records WHERE org_id = ?', [orgId]);
   if (Number(existing[0].c) > 0) {
     log(`Usage: ${Number(existing[0].c).toLocaleString()} rows already exist for ${ORG_NAME}, skipping`);
     return;
@@ -96,7 +99,7 @@ async function generateUsage(orgId, instances) {
 
   const now = new Date();
   now.setUTCMinutes(0, 0, 0);
-  const sql = 'INSERT INTO usage_records (recorded_at, instance_id, org_id, type_id, metric, quantity) VALUES ?';
+  const sql = 'INSERT INTO usage_records (recorded_at, instance_id, type_id, metric, quantity) VALUES ?';
   const conn = await pool.getConnection();
   let rows = [];
   let total = 0;
@@ -117,11 +120,11 @@ async function generateUsage(orgId, instances) {
       for (let h = DAYS * 24; h >= 1; h -= 1) {
         const ts = new Date(now.getTime() - h * 3600 * 1000);
         if (Math.random() > 0.04) {
-          rows.push([fmt(ts), inst.instance_id, orgId, inst.type_id, 'cpu_hour', 1]);
+          rows.push([fmt(ts), inst.instance_id, inst.type_id, 'cpu_hour', 1]);
         }
         if (ts.getUTCHours() === 0) {
-          rows.push([fmt(ts), inst.instance_id, orgId, inst.type_id, 'storage_gb', (baseStorage + rand(-2, 2)).toFixed(3)]);
-          rows.push([fmt(ts), inst.instance_id, orgId, inst.type_id, 'egress_gb', rand(0.2, 9).toFixed(3)]);
+          rows.push([fmt(ts), inst.instance_id, inst.type_id, 'storage_gb', (baseStorage + rand(-2, 2)).toFixed(3)]);
+          rows.push([fmt(ts), inst.instance_id, inst.type_id, 'egress_gb', rand(0.2, 9).toFixed(3)]);
         }
         if (rows.length >= BATCH) await flush();
       }
@@ -158,7 +161,7 @@ async function generateInvoices(orgId) {
 
   // Pay every second invoice so the billing screens show a mix of paid and unpaid
   const [open] = await pool.query(
-    "SELECT invoice_id, total FROM invoices WHERE org_id = ? AND status IN ('issued','overdue') AND total > 0 ORDER BY invoice_id",
+    "SELECT invoice_id, total FROM v_invoices WHERE org_id = ? AND status IN ('issued','overdue') AND total > 0 ORDER BY invoice_id",
     [orgId]
   );
   let paid = 0;
@@ -172,6 +175,24 @@ async function generateInvoices(orgId) {
     }
   }
   log(`Payments: ${paid} invoices paid`);
+}
+
+// The database requires a ticket's creator to belong to the ticket's organization,
+// so LoadTest Corp gets its own customer login.
+async function ensureLoadTestCustomer(orgId) {
+  const email = 'owner@loadtest.test';
+  const [found] = await pool.query('SELECT user_id FROM users WHERE email = ?', [email]);
+  let userId = found[0]?.user_id;
+  if (!userId) {
+    const hash = await bcrypt.hash('LoadTest123!', 10);
+    const [res] = await pool.query(
+      "INSERT INTO users(email, password_hash, full_name, system_role) VALUES (?, ?, 'LoadTest Owner', 'customer')",
+      [email, hash]
+    );
+    userId = res.insertId;
+  }
+  await pool.query("INSERT IGNORE INTO org_members(org_id, user_id, member_role) VALUES (?, ?, 'owner')", [orgId, userId]);
+  return userId;
 }
 
 const SUBJECTS = [
@@ -204,13 +225,12 @@ async function generateTickets(orgId) {
     log(`Tickets: ${have[0].c} already exist for ${ORG_NAME}, skipping`);
     return;
   }
-  const [cust] = await pool.query("SELECT user_id FROM users WHERE email = 'owner@acme.test'");
   const [sup] = await pool.query("SELECT user_id FROM users WHERE email = 'support@nimbus.test'");
-  if (!cust[0] || !sup[0]) {
-    log('Tickets: demo users not found. Run: npm run seed-users, then run this script again');
+  if (!sup[0]) {
+    log('Tickets: support demo user not found. Run: npm run seed-users, then run this script again');
     return;
   }
-  const customerId = cust[0].user_id;
+  const customerId = await ensureLoadTestCustomer(orgId);
   const supportId = sup[0].user_id;
   const priorities = ['low', 'medium', 'medium', 'high', 'critical'];
   const statuses = ['open', 'in_progress', 'resolved', 'closed', 'closed'];
@@ -262,11 +282,14 @@ async function main() {
   await generateInvoices(orgId);
   await generateTickets(orgId);
 
+  log('Refreshing the star schema...');
+  await pool.query('CALL sp_refresh_star_schema(DATE_SUB(CURRENT_DATE, INTERVAL ? DAY), CURRENT_DATE)', [Math.min(DAYS, 2900)]);
+
   log('Refreshing table statistics...');
-  await pool.query('ANALYZE TABLE usage_records, instances, invoices, invoice_items, ticket_messages, audit_log');
+  await pool.query('ANALYZE TABLE usage_records, instances, invoices, invoice_items, ticket_messages, audit_log, fact_usage_daily');
 
   const counts = {};
-  for (const t of ['usage_records', 'instances', 'invoices', 'invoice_items', 'tickets', 'ticket_messages', 'audit_log']) {
+  for (const t of ['usage_records', 'instances', 'invoices', 'invoice_items', 'tickets', 'ticket_messages', 'audit_log', 'fact_usage_daily']) {
     const [r] = await pool.query(`SELECT COUNT(*) AS c FROM ${t}`);
     counts[t] = Number(r[0].c).toLocaleString();
   }

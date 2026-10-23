@@ -7,6 +7,10 @@
 
 SELECT CONCAT('NimbusHost schema installing on MySQL ', VERSION()) AS info;
 
+-- Stored-procedure parameters take the database's default collation. Make it match the tables
+-- (utf8mb4_unicode_ci), otherwise comparing a parameter with a column fails with "Illegal mix of collations".
+ALTER DATABASE CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
 SET FOREIGN_KEY_CHECKS = 0;
 SET @OLD_SQL_MODE = @@SQL_MODE;
 SET SQL_MODE = 'STRICT_TRANS_TABLES,NO_ENGINE_SUBSTITUTION';
@@ -150,20 +154,25 @@ CREATE TABLE pricing (
   UNIQUE KEY uq_price_start (type_id, valid_from)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+DROP TABLE IF EXISTS operating_systems;
+CREATE TABLE operating_systems (
+  os_id     INT         AUTO_INCREMENT PRIMARY KEY,
+  name      VARCHAR(60) NOT NULL UNIQUE,
+  os_family ENUM('linux','windows','bsd') NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- images was split from operating_systems to remove the dependency name -> os_family
+-- (3NF/BCNF): the OS family is stored once per operating system, not once per version.
 DROP TABLE IF EXISTS images;
 CREATE TABLE images (
   image_id    INT         AUTO_INCREMENT PRIMARY KEY,
-  name        VARCHAR(60) NOT NULL,
-  os_family   ENUM('linux','windows','bsd') NOT NULL,
+  os_id       INT         NOT NULL,
   version     VARCHAR(20) NOT NULL,
   min_disk_gb INT         NOT NULL DEFAULT 10,
-  UNIQUE KEY uq_image (name, version),
+  UNIQUE KEY uq_image (os_id, version),
+  CONSTRAINT fk_image_os FOREIGN KEY (os_id) REFERENCES operating_systems(os_id) ON DELETE RESTRICT ON UPDATE RESTRICT,
   CONSTRAINT chk_image_disk CHECK (min_disk_gb > 0)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- ============================================================
--- 3. COMPUTE
--- ============================================================
 
 DROP TABLE IF EXISTS instances;
 CREATE TABLE instances (
@@ -175,12 +184,7 @@ CREATE TABLE instances (
   name            VARCHAR(40)  NOT NULL,
   status          ENUM('pending','running','stopped','suspended','terminated') NOT NULL DEFAULT 'pending',
   config          JSON         NOT NULL DEFAULT (JSON_OBJECT()),
-  auto_backup     TINYINT(1)   GENERATED ALWAYS AS (
-                    IFNULL(JSON_UNQUOTE(JSON_EXTRACT(config, '$.auto_backup')) = 'true', 0)
-                  ) STORED,
-  live_name       VARCHAR(40)  GENERATED ALWAYS AS (
-                    IF(status = 'terminated', NULL, name)
-                  ) STORED,
+  auto_backup     TINYINT(1)   NOT NULL DEFAULT 0,
   idempotency_key VARCHAR(64)  NULL,
   created_at      TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
   terminated_at   TIMESTAMP    NULL DEFAULT NULL,
@@ -189,7 +193,9 @@ CREATE TABLE instances (
   CONSTRAINT fk_inst_type  FOREIGN KEY (type_id)  REFERENCES instance_types(type_id) ON DELETE RESTRICT ON UPDATE RESTRICT,
   CONSTRAINT fk_inst_image FOREIGN KEY (image_id) REFERENCES images(image_id)        ON DELETE RESTRICT ON UPDATE RESTRICT,
   CONSTRAINT chk_inst_name CHECK (name REGEXP '^[a-z0-9][a-z0-9-]{0,38}[a-z0-9]$'),
-  UNIQUE KEY uq_inst_live_name    (org_id, live_name),
+  -- A name is unique among live instances only (terminated names can be reused). A functional index
+  -- enforces this without storing a derived column, so the table stays in 3NF.
+  UNIQUE KEY uq_inst_live_name    (org_id, (IF(status = 'terminated', NULL, name))),
   UNIQUE KEY uq_inst_idempotency  (idempotency_key),
   INDEX idx_inst_org_status  (org_id, status),
   INDEX idx_inst_host_status (host_id, status),
@@ -222,7 +228,6 @@ CREATE TABLE volumes (
   size_gb     INT         NOT NULL,
   vol_type    ENUM('ssd','hdd') NOT NULL DEFAULT 'ssd',
   status      ENUM('available','attached','deleted') NOT NULL DEFAULT 'available',
-  live_name   VARCHAR(40) GENERATED ALWAYS AS (IF(status = 'deleted', NULL, name)) STORED,
   created_at  TIMESTAMP   NOT NULL DEFAULT CURRENT_TIMESTAMP,
   deleted_at  TIMESTAMP   NULL DEFAULT NULL,
   CONSTRAINT fk_vol_org      FOREIGN KEY (org_id)      REFERENCES organizations(org_id) ON DELETE RESTRICT ON UPDATE RESTRICT,
@@ -230,7 +235,7 @@ CREATE TABLE volumes (
   CONSTRAINT fk_vol_instance FOREIGN KEY (instance_id) REFERENCES instances(instance_id) ON DELETE SET NULL ON UPDATE RESTRICT,
   CONSTRAINT chk_vol_size CHECK (size_gb BETWEEN 1 AND 16000),
   CONSTRAINT chk_vol_name CHECK (name REGEXP '^[a-z0-9][a-z0-9-]{0,38}[a-z0-9]$'),
-  UNIQUE KEY uq_vol_live_name (org_id, live_name),
+  UNIQUE KEY uq_vol_live_name (org_id, (IF(status = 'deleted', NULL, name))),
   INDEX idx_vol_org_status (org_id, status),
   INDEX idx_vol_instance   (instance_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -287,14 +292,12 @@ CREATE TABLE usage_records (
   usage_id    BIGINT          AUTO_INCREMENT,
   recorded_at DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
   instance_id INT             NOT NULL,
-  org_id      INT             NOT NULL,
   type_id     INT             NOT NULL,
   metric      ENUM('cpu_hour','storage_gb','egress_gb') NOT NULL,
   quantity    DECIMAL(10,3)   NOT NULL,
   PRIMARY KEY (usage_id, recorded_at),
   CONSTRAINT chk_usage_qty CHECK (quantity >= 0),
-  INDEX idx_usage_instance (instance_id, recorded_at),
-  INDEX idx_usage_org      (org_id, recorded_at),
+  INDEX idx_usage_time     (recorded_at),
   INDEX idx_usage_cover    (instance_id, recorded_at, metric, quantity)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 PARTITION BY RANGE COLUMNS(recorded_at) (
@@ -324,19 +327,18 @@ CREATE TABLE invoices (
   period_start   DATE          NOT NULL,
   period_end     DATE          NOT NULL,
   subtotal       DECIMAL(12,2) NOT NULL DEFAULT 0.00,
-  tax            DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+  tax_rate_pct   DECIMAL(5,2)  NOT NULL DEFAULT 18.00,
   credit_applied DECIMAL(12,2) NOT NULL DEFAULT 0.00,
-  total          DECIMAL(12,2) NOT NULL DEFAULT 0.00,
   status         ENUM('draft','issued','paid','overdue','void') NOT NULL DEFAULT 'draft',
   issued_at      TIMESTAMP     NULL DEFAULT NULL,
   due_date       DATE          NULL,
   created_at     TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT fk_inv_org FOREIGN KEY (org_id) REFERENCES organizations(org_id) ON DELETE RESTRICT ON UPDATE RESTRICT,
-  CONSTRAINT chk_inv_total    CHECK (total = subtotal + tax - credit_applied),
+  CONSTRAINT chk_inv_rate     CHECK (tax_rate_pct BETWEEN 0 AND 100),
+  CONSTRAINT chk_inv_credit   CHECK (credit_applied >= 0 AND credit_applied <= subtotal + ROUND(subtotal * tax_rate_pct / 100, 2)),
   CONSTRAINT chk_inv_due_date CHECK (due_date IS NULL OR issued_at IS NULL OR due_date >= DATE(issued_at)),
   CONSTRAINT chk_inv_period   CHECK (period_end >= period_start),
   UNIQUE KEY uq_inv_org_period (org_id, period_start),
-  INDEX idx_inv_status    (status),
   INDEX idx_inv_due       (status, due_date)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -348,10 +350,9 @@ CREATE TABLE invoice_items (
   description  VARCHAR(255)  NOT NULL,
   quantity     DECIMAL(10,3) NOT NULL,
   unit_price   DECIMAL(8,4)  NOT NULL,
-  amount       DECIMAL(12,2) NOT NULL,
   CONSTRAINT fk_ii_invoice  FOREIGN KEY (invoice_id) REFERENCES invoices(invoice_id) ON DELETE RESTRICT ON UPDATE RESTRICT,
   CONSTRAINT fk_ii_instance FOREIGN KEY (instance_id) REFERENCES instances(instance_id) ON DELETE SET NULL ON UPDATE RESTRICT,
-  CONSTRAINT chk_ii_amount  CHECK (amount = ROUND(quantity * unit_price, 2)),
+  CONSTRAINT chk_ii_qty     CHECK (quantity >= 0 AND unit_price >= 0),
   INDEX idx_ii_invoice (invoice_id),
   INDEX idx_ii_instance (instance_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -468,16 +469,43 @@ CREATE TABLE daily_usage_summary (
 -- ============================================================
 
 DROP TABLE IF EXISTS dim_date;
+-- Calendar attributes that depend on the month or on the weekday (not on the date itself) live in
+-- their own small tables, so dim_date has no dependency between non-key attributes (3NF).
+DROP TABLE IF EXISTS dim_month;
+CREATE TABLE dim_month (
+  month      TINYINT     PRIMARY KEY,
+  month_name VARCHAR(10) NOT NULL UNIQUE,
+  quarter    TINYINT     NOT NULL,
+  CONSTRAINT chk_dm_month   CHECK (month BETWEEN 1 AND 12),
+  CONSTRAINT chk_dm_quarter CHECK (quarter BETWEEN 1 AND 4)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT INTO dim_month(month, month_name, quarter) VALUES
+  (1,'January',1),(2,'February',1),(3,'March',1),(4,'April',2),(5,'May',2),(6,'June',2),
+  (7,'July',3),(8,'August',3),(9,'September',3),(10,'October',4),(11,'November',4),(12,'December',4);
+
+DROP TABLE IF EXISTS dim_weekday;
+CREATE TABLE dim_weekday (
+  day_of_week TINYINT     PRIMARY KEY,
+  day_name    VARCHAR(10) NOT NULL UNIQUE,
+  is_weekend  BOOLEAN     NOT NULL,
+  CONSTRAINT chk_dw_dow CHECK (day_of_week BETWEEN 1 AND 7)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- day_of_week follows MySQL DAYOFWEEK(): 1 = Sunday ... 7 = Saturday
+INSERT INTO dim_weekday(day_of_week, day_name, is_weekend) VALUES
+  (1,'Sunday',1),(2,'Monday',0),(3,'Tuesday',0),(4,'Wednesday',0),(5,'Thursday',0),(6,'Friday',0),(7,'Saturday',1);
+
+DROP TABLE IF EXISTS dim_date;
 CREATE TABLE dim_date (
   date_key    INT         PRIMARY KEY,
   full_date   DATE        NOT NULL UNIQUE,
   year        SMALLINT    NOT NULL,
-  quarter     TINYINT     NOT NULL,
   month       TINYINT     NOT NULL,
   day         TINYINT     NOT NULL,
   day_of_week TINYINT     NOT NULL,
-  month_name  VARCHAR(10) NOT NULL,
-  is_weekend  BOOLEAN     NOT NULL
+  CONSTRAINT fk_dd_month   FOREIGN KEY (month)       REFERENCES dim_month(month)        ON DELETE RESTRICT ON UPDATE RESTRICT,
+  CONSTRAINT fk_dd_weekday FOREIGN KEY (day_of_week) REFERENCES dim_weekday(day_of_week) ON DELETE RESTRICT ON UPDATE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 DROP TABLE IF EXISTS dim_org;
@@ -516,6 +544,36 @@ CREATE TABLE fact_usage_daily (
   INDEX idx_fact_org  (org_key, date_key),
   INDEX idx_fact_type (type_key, date_key)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ============================================================
+-- 11. DERIVED-ATTRIBUTE VIEWS (keep the base tables in 3NF)
+-- ============================================================
+-- Values that can be computed from other columns of the same row are NOT stored. These views expose
+-- them under their familiar names:
+--   invoices.tax, invoices.total, invoice_items.amount, usage_records.org_id.
+
+DROP VIEW IF EXISTS v_invoices;
+CREATE VIEW v_invoices AS
+SELECT i.invoice_id, i.org_id, i.period_start, i.period_end,
+       i.subtotal,
+       i.tax_rate_pct,
+       ROUND(i.subtotal * i.tax_rate_pct / 100, 2) AS tax,
+       i.credit_applied,
+       i.subtotal + ROUND(i.subtotal * i.tax_rate_pct / 100, 2) - i.credit_applied AS total,
+       i.status, i.issued_at, i.due_date, i.created_at
+FROM invoices i;
+
+DROP VIEW IF EXISTS v_invoice_items;
+CREATE VIEW v_invoice_items AS
+SELECT ii.item_id, ii.invoice_id, ii.instance_id, ii.description, ii.quantity, ii.unit_price,
+       ROUND(ii.quantity * ii.unit_price, 2) AS amount
+FROM invoice_items ii;
+
+DROP VIEW IF EXISTS v_usage_records;
+CREATE VIEW v_usage_records AS
+SELECT u.usage_id, u.recorded_at, u.instance_id, i.org_id, u.type_id, u.metric, u.quantity
+FROM usage_records u
+JOIN instances i ON i.instance_id = u.instance_id;
 
 -- ============================================================
 -- RESTORE

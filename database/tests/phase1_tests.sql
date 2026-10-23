@@ -16,6 +16,7 @@ DELETE FROM ip_addresses;
 DELETE FROM instances;
 DELETE FROM hosts;
 DELETE FROM images;
+DELETE FROM operating_systems;
 DELETE FROM pricing;
 DELETE FROM instance_types;
 DELETE FROM regions;
@@ -36,7 +37,8 @@ INSERT INTO org_members(org_id, user_id, member_role) VALUES (1, 1, 'owner');
 INSERT INTO regions(code, name, country) VALUES ('us-east-1', 'US East', 'USA');
 INSERT INTO hosts(region_id, hostname, total_vcpu, total_ram_gb, total_disk_gb) VALUES (1, 'host-01', 64, 128, 1000);
 INSERT INTO instance_types(name, vcpu, ram_gb, disk_gb) VALUES ('t2.small', 1, 2, 20);
-INSERT INTO images(name, os_family, version) VALUES ('Ubuntu', 'linux', '22.04');
+INSERT INTO operating_systems(name, os_family) VALUES ('Ubuntu', 'linux');
+INSERT INTO images(os_id, version) VALUES (1, '22.04');
 INSERT INTO pricing(type_id, price_per_hour, valid_from) VALUES (1, 0.0500, '2026-01-01');
 
 SELECT 'SETUP COMPLETE' AS status;
@@ -64,11 +66,11 @@ SELECT 'T06f: dns ttl below minimum' AS test;
 INSERT INTO domains(org_id, name, registered_on, expires_on) VALUES (1, 'test.com', '2026-01-01', '2027-01-01');
 INSERT INTO dns_records(domain_id, rtype, name, value, ttl) VALUES (LAST_INSERT_ID(), 'A', '@', '1.2.3.4', 10);
 
-SELECT 'T06g: invoice total mismatch' AS test;
-INSERT INTO invoices(org_id, period_start, period_end, subtotal, tax, credit_applied, total) VALUES (1, '2026-01-01', '2026-01-31', 100.00, 10.00, 0.00, 999.00);
+SELECT 'T06g: credit larger than subtotal + tax (total would be negative)' AS test;
+INSERT INTO invoices(org_id, period_start, period_end, subtotal, tax_rate_pct, credit_applied) VALUES (1, '2026-01-01', '2026-01-31', 100.00, 10.00, 999.00);
 
 SELECT 'T06h: payment amount <= 0' AS test;
-INSERT INTO invoices(org_id, period_start, period_end, subtotal, tax, credit_applied, total) VALUES (1, '2026-02-01', '2026-02-28', 100.00, 10.00, 0.00, 110.00);
+INSERT INTO invoices(org_id, period_start, period_end, subtotal, tax_rate_pct, credit_applied) VALUES (1, '2026-02-01', '2026-02-28', 100.00, 10.00, 0.00);
 INSERT INTO payments(invoice_id, amount, method, txn_ref) VALUES (LAST_INSERT_ID(), -50.00, 'card', 'txn-001');
 
 SELECT 'T06i: domain expires before registration' AS test;
@@ -114,7 +116,7 @@ SELECT 'T08d: duplicate pricing start date for same type' AS test;
 INSERT INTO pricing(type_id, price_per_hour, valid_from) VALUES (1, 0.1000, '2026-01-01');
 
 SELECT 'T08e: duplicate txn_ref' AS test;
-INSERT INTO invoices(org_id, period_start, period_end, subtotal, tax, credit_applied, total) VALUES (1, '2026-03-01', '2026-03-31', 50.00, 5.00, 0.00, 55.00);
+INSERT INTO invoices(org_id, period_start, period_end, subtotal, tax_rate_pct, credit_applied) VALUES (1, '2026-03-01', '2026-03-31', 50.00, 10.00, 0.00);
 SET @inv_id = LAST_INSERT_ID();
 INSERT INTO payments(invoice_id, amount, method, txn_ref) VALUES (@inv_id, 55.00, 'card', 'txn-unique-1');
 INSERT INTO payments(invoice_id, amount, method, txn_ref) VALUES (@inv_id, 55.00, 'card', 'txn-unique-1');
@@ -124,3 +126,4 @@ INSERT INTO ip_addresses(region_id, ip_address) VALUES (1, '10.0.0.1');
 INSERT INTO ip_addresses(region_id, ip_address) VALUES (1, '10.0.0.1');
 
 SELECT '=== ALL PHASE 1 TESTS COMPLETE ===' AS result;
+

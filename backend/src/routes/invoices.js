@@ -12,7 +12,7 @@ router.use(authenticate);
 
 async function verifyInvoiceAccess(conn, user, invoiceId) {
   const [rows] = await conn.execute(
-    'SELECT invoice_id, org_id, status FROM invoices WHERE invoice_id = ?',
+    'SELECT invoice_id, org_id, status FROM v_invoices WHERE invoice_id = ?',
     [invoiceId]
   );
   const inv = rows[0];
@@ -35,7 +35,7 @@ router.get('/', async (req, res, next) => {
     const rows = await withDb(req, async (conn) => {
       const sql = `SELECT i.*, o.name AS org_name,
                           fn_invoice_balance(i.invoice_id) AS balance
-                   FROM invoices i
+                   FROM v_invoices i
                    JOIN organizations o ON o.org_id = i.org_id
                    ${isCustomer ? 'WHERE i.org_id = ?' : ''}
                    ORDER BY i.period_start DESC, i.invoice_id DESC`;
@@ -60,7 +60,7 @@ router.get('/:id', validate({ params: idParamSchema }), async (req, res, next) =
 
       const [invoiceRows] = await conn.execute(
         `SELECT i.*, o.name AS org_name, fn_invoice_balance(i.invoice_id) AS balance
-         FROM invoices i
+         FROM v_invoices i
          JOIN organizations o ON o.org_id = i.org_id
          WHERE i.invoice_id = ?`,
         [invoiceId]
@@ -68,7 +68,7 @@ router.get('/:id', validate({ params: idParamSchema }), async (req, res, next) =
 
       const [items] = await conn.execute(
         `SELECT item_id, invoice_id, instance_id, description, quantity, unit_price, amount
-         FROM invoice_items
+         FROM v_invoice_items
          WHERE invoice_id = ?
          ORDER BY item_id ASC`,
         [invoiceId]

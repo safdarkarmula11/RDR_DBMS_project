@@ -20,17 +20,17 @@ router.post('/tick-usage', async (req, res, next) => {
       for (const inst of running) {
         // vCPU compute hour
         await conn.execute(
-          `INSERT INTO usage_records (instance_id, org_id, type_id, metric, quantity, recorded_at)
-           VALUES (?, ?, ?, 'cpu_hour', 1.0, NOW())`,
-          [inst.instance_id, inst.org_id, inst.type_id]
+          `INSERT INTO usage_records (instance_id, type_id, metric, quantity, recorded_at)
+           VALUES (?, ?, 'cpu_hour', 1.0, NOW())`,
+          [inst.instance_id, inst.type_id]
         );
 
         // Network egress
         const egressMb = (Math.random() * 250 + 10).toFixed(2);
         await conn.execute(
-          `INSERT INTO usage_records (instance_id, org_id, type_id, metric, quantity, recorded_at)
-           VALUES (?, ?, ?, 'network_egress_gb', ?, NOW())`,
-          [inst.instance_id, inst.org_id, inst.type_id, (egressMb / 1024).toFixed(4)]
+          `INSERT INTO usage_records (instance_id, type_id, metric, quantity, recorded_at)
+           VALUES (?, ?, 'egress_gb', ?, NOW())`,
+          [inst.instance_id, inst.type_id, (egressMb / 1024).toFixed(4)]
         );
         ticks++;
       }
@@ -60,7 +60,7 @@ router.post('/run-billing', async (req, res, next) => {
         SELECT COUNT(*) AS total_invoices,
                COALESCE(SUM(total), 0) AS total_billed,
                COALESCE(SUM(credit_applied), 0) AS total_credits
-        FROM invoices
+        FROM v_invoices
         WHERE period_start = ? AND period_end = ?
       `, [start_date, end_date]);
 

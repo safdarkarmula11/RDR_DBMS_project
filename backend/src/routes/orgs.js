@@ -410,7 +410,7 @@ router.get('/:id/cost-tree', validate({ params: idParamSchema }), tenantGuard('i
                 COALESCE(SUM(inv.total), 0.00) AS total_invoiced,
                 COALESCE(SUM(p.amount), 0.00) AS total_paid
          FROM org_tree ot
-         LEFT JOIN invoices inv ON inv.org_id = ot.org_id AND inv.status <> 'void'
+         LEFT JOIN v_invoices inv ON inv.org_id = ot.org_id AND inv.status <> 'void'
          LEFT JOIN payments p ON p.invoice_id = inv.invoice_id
          GROUP BY ot.org_id, ot.name, ot.parent_org_id, ot.level
          ORDER BY ot.level, ot.name`,
