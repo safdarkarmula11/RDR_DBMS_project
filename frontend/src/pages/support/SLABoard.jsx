@@ -7,7 +7,7 @@ import { AlertOctagon, CheckCircle2, Clock, ShieldCheck, User } from 'lucide-rea
 const LANES = [
   { id: 'critical', title: 'Critical SLA (1h Target)', tone: 'danger', bg: 'rgba(240, 68, 97, 0.08)' },
   { id: 'high', title: 'High Priority (4h Target)', tone: 'warn', bg: 'rgba(245, 165, 36, 0.08)' },
-  { id: 'medium', title: 'Medium Priority (12h Target)', tone: 'brand', bg: 'rgba(47, 107, 255, 0.08)' },
+  { id: 'medium', title: 'Medium Priority (12h Target)', tone: 'brand', bg: 'var(--brand-light)' },
   { id: 'low', title: 'Low Priority (24h Target)', tone: 'muted', bg: 'rgba(107, 118, 144, 0.08)' },
 ];
 
@@ -78,33 +78,38 @@ export default function SLABoard() {
               </div>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10, overflowY: 'auto', flex: 1 }}>
-                {laneTickets.map(t => (
-                  <div
-                    key={t.ticket_id}
-                    className="card"
-                    style={{
-                      padding: 12,
-                      borderLeft: `4px solid var(--${lane.tone})`,
-                      boxShadow: 'var(--shadow-sm)'
-                    }}
-                  >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                      <span className="mono" style={{ fontSize: 11, color: 'var(--muted)' }}>#{t.ticket_id}</span>
-                      <StatusBadge value={t.status} />
-                    </div>
+                {laneTickets.map((t, idx) => {
+                  const isUrgent = t.hours_left <= 1 && t.status !== 'resolved';
+                  return (
+                    <div
+                      key={t.ticket_id}
+                      className="card card-interactive"
+                      style={{
+                        padding: 12,
+                        borderLeft: `4px solid var(--${lane.tone})`,
+                        boxShadow: 'var(--shadow-sm)',
+                        animation: isUrgent ? 'pulseWarn 2.5s infinite' : undefined,
+                        transition: 'transform var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out)'
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                        <span className="mono" style={{ fontSize: 11, color: 'var(--muted)' }}>#{t.ticket_id}</span>
+                        <StatusBadge value={t.status} />
+                      </div>
 
-                    <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--ink)', marginBottom: 6 }}>
-                      {t.subject}
-                    </div>
+                      <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--ink)', marginBottom: 6 }}>
+                        {t.subject}
+                      </div>
 
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12, color: 'var(--muted)', borderTop: '1px solid var(--line)', paddingTop: 6 }}>
-                      <span>{t.org_name}</span>
-                      <span className="mono" style={{ color: t.hours_left <= 1 ? 'var(--danger)' : 'var(--ink)', fontWeight: 600 }}>
-                        {t.hours_left}h left
-                      </span>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12, color: 'var(--muted)', borderTop: '1px solid var(--line)', paddingTop: 6 }}>
+                        <span>{t.org_name}</span>
+                        <span className="mono" style={{ color: isUrgent ? 'var(--danger)' : 'var(--ink)', fontWeight: 600 }}>
+                          {t.hours_left}h left
+                        </span>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
 
                 {laneTickets.length === 0 && (
                   <div style={{ textAlign: 'center', padding: '32px 12px', color: 'var(--muted)', fontSize: 12 }}>

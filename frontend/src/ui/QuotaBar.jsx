@@ -15,6 +15,15 @@ export default function QuotaBar({
   const pct = Math.min(100, Math.max(0, Math.round((used / safeTotal) * 100)));
   const tone = pct >= 95 ? 'danger' : pct >= 80 ? 'warn' : 'brand';
 
+  const [animatedPct, setAnimatedPct] = React.useState(0);
+
+  React.useEffect(() => {
+    const timer = setTimeout(() => {
+      setAnimatedPct(pct);
+    }, 60);
+    return () => clearTimeout(timer);
+  }, [pct]);
+
   const unitSuffix = unit ? ` ${unit}` : '';
 
   return (
@@ -36,7 +45,7 @@ export default function QuotaBar({
       >
         <div
           className={`quota-fill quota-fill--${tone}`}
-          style={{ width: `${pct}%` }}
+          style={{ width: `${animatedPct}%` }}
         />
       </div>
 

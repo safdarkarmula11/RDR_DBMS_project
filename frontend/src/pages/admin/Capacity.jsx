@@ -5,6 +5,7 @@ import StatusBadge from '../../ui/StatusBadge';
 import DataTable from '../../ui/DataTable';
 import Skeleton from '../../ui/Skeleton';
 import Banner from '../../ui/Banner';
+import CountUp from '../../ui/CountUp';
 import { Cpu, HardDrive, Server, RefreshCw, AlertTriangle, CheckCircle2 } from 'lucide-react';
 
 export default function Capacity() {
@@ -91,13 +92,13 @@ export default function Capacity() {
 
       {/* Region Cards */}
       <div className="grid-12" style={{ marginBottom: 24 }}>
-        {regions.map((reg) => {
+        {regions.map((reg, idx) => {
           const cpuPct = Math.round((reg.used_vcpu / (reg.total_vcpu || 1)) * 100);
           const ramPct = Math.round((reg.used_ram_gb / (reg.total_ram_gb || 1)) * 100);
           const diskPct = Math.round((reg.used_disk_gb / (reg.total_disk_gb || 1)) * 100);
 
           return (
-            <div key={reg.region_id} className="card col-4">
+            <div key={reg.region_id} className={`card card-interactive col-4 stagger-${(idx % 4) + 1}`}>
               <div className="card-header" style={{ marginBottom: 12 }}>
                 <div>
                   <div className="card-title">{reg.name}</div>
@@ -114,10 +115,12 @@ export default function Capacity() {
               <div style={{ marginBottom: 10 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 4 }}>
                   <span>vCPU Usage</span>
-                  <span className="mono">{reg.used_vcpu} / {reg.total_vcpu} ({cpuPct}%)</span>
+                  <span className="mono">
+                    {reg.used_vcpu} / {reg.total_vcpu} (<CountUp value={cpuPct} suffix="%" />)
+                  </span>
                 </div>
                 <div style={{ height: 6, background: 'var(--line)', borderRadius: 999, overflow: 'hidden' }}>
-                  <div style={{ height: '100%', width: `${cpuPct}%`, background: getUtilColor(cpuPct), borderRadius: 999 }} />
+                  <div style={{ height: '100%', width: `${cpuPct}%`, background: getUtilColor(cpuPct), borderRadius: 999, transition: 'width 0.6s var(--ease-out)' }} />
                 </div>
               </div>
 
@@ -125,10 +128,12 @@ export default function Capacity() {
               <div style={{ marginBottom: 10 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 4 }}>
                   <span>RAM Memory</span>
-                  <span className="mono">{reg.used_ram_gb} GB / {reg.total_ram_gb} GB ({ramPct}%)</span>
+                  <span className="mono">
+                    {reg.used_ram_gb} GB / {reg.total_ram_gb} GB (<CountUp value={ramPct} suffix="%" />)
+                  </span>
                 </div>
                 <div style={{ height: 6, background: 'var(--line)', borderRadius: 999, overflow: 'hidden' }}>
-                  <div style={{ height: '100%', width: `${ramPct}%`, background: getUtilColor(ramPct), borderRadius: 999 }} />
+                  <div style={{ height: '100%', width: `${ramPct}%`, background: getUtilColor(ramPct), borderRadius: 999, transition: 'width 0.6s var(--ease-out)' }} />
                 </div>
               </div>
 
@@ -136,10 +141,12 @@ export default function Capacity() {
               <div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 4 }}>
                   <span>NVMe Storage</span>
-                  <span className="mono">{reg.used_disk_gb} GB / {reg.total_disk_gb} GB ({diskPct}%)</span>
+                  <span className="mono">
+                    {reg.used_disk_gb} GB / {reg.total_disk_gb} GB (<CountUp value={diskPct} suffix="%" />)
+                  </span>
                 </div>
                 <div style={{ height: 6, background: 'var(--line)', borderRadius: 999, overflow: 'hidden' }}>
-                  <div style={{ height: '100%', width: `${diskPct}%`, background: getUtilColor(diskPct), borderRadius: 999 }} />
+                  <div style={{ height: '100%', width: `${diskPct}%`, background: getUtilColor(diskPct), borderRadius: 999, transition: 'width 0.6s var(--ease-out)' }} />
                 </div>
               </div>
             </div>

@@ -4,7 +4,8 @@ import { useAuth } from './AuthContext';
 import Input from '../ui/Input';
 import Button from '../ui/Button';
 import Banner from '../ui/Banner';
-import { Cloud } from 'lucide-react';
+import AmbientBackground from '../ui/AmbientBackground';
+import LemonLogo from '../ui/LemonLogo';
 import { api } from '../api';
 
 export default function RegisterPage() {
@@ -39,7 +40,7 @@ export default function RegisterPage() {
       await api.post('/auth/register', form);
       // Auto login on successful registration
       await login(form.email, form.password);
-      navigate('/');
+      navigate('/dashboard');
     } catch (err) {
       setErrorMsg(err.msg || err.error || 'Failed to create organization. Please try again.');
     } finally {
@@ -48,45 +49,18 @@ export default function RegisterPage() {
   };
 
   return (
-    <div
-      style={{
-        minHeight: '100vh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        background: 'var(--bg)',
-        padding: 24,
-      }}
-    >
-      <div
-        className="card"
-        style={{
-          width: '100%',
-          maxWidth: 480,
-          padding: 32,
-          boxShadow: 'var(--shadow-lg)',
-        }}
-      >
-        <div style={{ textAlign: 'center', marginBottom: 28 }}>
-          <div
-            style={{
-              width: 48,
-              height: 48,
-              background: 'var(--brand)',
-              borderRadius: 'var(--radius-md)',
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: '#FFFFFF',
-              marginBottom: 12,
-            }}
-          >
-            <Cloud size={28} />
+    <div className="auth-root">
+      <AmbientBackground />
+
+      <div className="auth-card" style={{ maxWidth: 480 }}>
+        <div className="auth-logo-wrap">
+          <div className="auth-logo-icon" style={{ background: 'rgba(250, 204, 21, 0.15)', border: '1px solid rgba(250, 204, 21, 0.35)' }}>
+            <LemonLogo size={32} />
           </div>
-          <h1 style={{ fontSize: 22, fontWeight: 700 }}>Get Started with NimbusHost</h1>
-          <p style={{ color: 'var(--muted)', fontSize: 13, marginTop: 4 }}>
-            Create your organization and cloud account
-          </p>
+          <div>
+            <div className="auth-title">Get Started with NimbusHost</div>
+            <div className="auth-subtitle">Create your organization and cloud account</div>
+          </div>
         </div>
 
         {errorMsg && (
@@ -118,6 +92,7 @@ export default function RegisterPage() {
             onChange={(e) => handleChange('email', e.target.value)}
             placeholder="alice@acme.com"
             required
+            autoComplete="username"
           />
 
           <Input
@@ -127,6 +102,7 @@ export default function RegisterPage() {
             onChange={(e) => handleChange('password', e.target.value)}
             placeholder="Minimum 8 characters"
             required
+            autoComplete="new-password"
           />
 
           <div className="form-group">
@@ -151,16 +127,16 @@ export default function RegisterPage() {
               variant="primary"
               loading={loading}
               disabled={loading}
-              style={{ width: '100%' }}
+              style={{ width: '100%', height: 42, fontSize: 14 }}
             >
-              Create Account & Workspace
+              Create Account &amp; Workspace
             </Button>
           </div>
         </form>
 
         <div style={{ marginTop: 20, textAlign: 'center', fontSize: 13, color: 'var(--muted)' }}>
           Already registered?{' '}
-          <Link to="/login" style={{ fontWeight: 600 }}>
+          <Link to="/login" style={{ fontWeight: 600, color: 'var(--brand)' }}>
             Sign in to Console
           </Link>
         </div>
@@ -168,4 +144,3 @@ export default function RegisterPage() {
     </div>
   );
 }
-

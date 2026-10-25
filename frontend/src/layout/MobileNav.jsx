@@ -16,7 +16,7 @@ export default function MobileNav() {
           <NavLink
             key={item.to}
             to={item.to}
-            end={item.to === '/' || item.to === '/billing' || item.to === '/support/queue' || item.to === '/admin/capacity'}
+            end={item.to === '/dashboard' || item.to === '/' || item.to === '/billing' || item.to === '/support/queue' || item.to === '/admin/capacity'}
             className={({ isActive }) => `mobile-nav-item ${isActive ? 'active' : ''}`}
           >
             <Icon size={18} aria-hidden="true" />

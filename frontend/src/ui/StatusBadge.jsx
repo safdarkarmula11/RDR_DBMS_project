@@ -52,9 +52,13 @@ export default function StatusBadge({ value, label, className = '' }) {
   const tone = TONE_MAP[normalized] || 'muted';
   const displayLabel = label || String(value).replace(/_/g, ' ');
 
+  const isLive = ['running', 'active', 'ok', 'pass', 'attached', 'available'].includes(normalized);
+  const isPending = ['pending', 'warning', 'maintenance', 'in_progress'].includes(normalized);
+  const dotPulseClass = isLive ? 'dot--pulse-live' : isPending ? 'dot--pulse-warn' : '';
+
   return (
     <span className={`badge badge--${tone} ${className}`.trim()} role="status">
-      <i className="dot" aria-hidden="true" />
+      <i className={`dot ${dotPulseClass}`.trim()} aria-hidden="true" />
       <span>{displayLabel}</span>
     </span>
   );

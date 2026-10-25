@@ -18,7 +18,7 @@ import {
   Legend
 } from 'recharts';
 
-const COLORS = ['#2F6BFF', '#7C5CFF', '#5AC8FA', '#19C37D'];
+const COLORS = ['#0E7C6A', '#D97706', '#2563EB', '#059669'];
 
 export default function Revenue() {
   const [loading, setLoading] = useState(true);

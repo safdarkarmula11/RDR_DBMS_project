@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { api } from '../../api';
 import DataTable from '../../ui/DataTable';
 import StatusBadge from '../../ui/StatusBadge';
+import CountUp from '../../ui/CountUp';
 import { Clock, AlertTriangle, DollarSign } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 
@@ -53,13 +54,13 @@ export default function Aging() {
 
       {/* Aggregate Cards */}
       <div className="grid-12" style={{ marginBottom: 24 }}>
-        <div className="card col-4">
+        <div className="card card-interactive col-4">
           <div className="card-header" style={{ marginBottom: 6 }}>
             <span className="card-subtitle">Total Overdue Arrears</span>
             <AlertTriangle size={18} color="var(--danger)" />
           </div>
           <div className="money" style={{ fontSize: 28, fontWeight: 700, color: 'var(--danger)', textAlign: 'left' }}>
-            ${totalArrears.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+            <CountUp value={totalArrears} prefix="$" decimals={2} />
           </div>
           <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>Unpaid receivables past due date</div>
         </div>

@@ -57,7 +57,7 @@ export function ToastProvider({ children }) {
               : 'var(--brand)';
 
           return (
-            <div key={t.id} className={`toast toast--${t.type}`}>
+            <div key={t.id} className={`toast toast--${t.type}`} style={{ position: 'relative', overflow: 'hidden' }}>
               <Icon size={18} color={iconColor} aria-hidden="true" style={{ flexShrink: 0 }} />
               <div style={{ flex: 1, minWidth: 0 }}>
                 {t.title && <div style={{ fontWeight: 600, marginBottom: 2 }}>{t.title}</div>}
@@ -72,6 +72,20 @@ export function ToastProvider({ children }) {
               >
                 <X size={14} aria-hidden="true" />
               </button>
+              {t.duration > 0 && (
+                <div
+                  className="toast-progress-bar"
+                  style={{
+                    position: 'absolute',
+                    bottom: 0,
+                    left: 0,
+                    height: 3,
+                    background: iconColor,
+                    animation: `toastProgressCountdown ${t.duration}ms linear forwards`,
+                    borderBottomLeftRadius: 'var(--radius-sm)'
+                  }}
+                />
+              )}
             </div>
           );
         })}

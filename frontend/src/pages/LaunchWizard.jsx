@@ -212,15 +212,16 @@ export default function LaunchWizard() {
                 display: 'flex',
                 alignItems: 'center',
                 gap: 8,
-                background: 'transparent',
+                background: isActive ? 'var(--brand-light)' : 'transparent',
                 border: 'none',
                 cursor: 'pointer',
                 color: isActive ? 'var(--brand)' : isDone ? 'var(--ok)' : 'var(--muted)',
                 fontWeight: isActive ? 600 : 500,
                 fontSize: 13,
-                padding: '6px 10px',
+                padding: '6px 12px',
                 borderRadius: 'var(--radius-sm)',
-                whiteSpace: 'nowrap'
+                whiteSpace: 'nowrap',
+                transition: 'all 0.2s var(--ease-out)'
               }}
             >
               <Icon size={16} aria-hidden="true" />
@@ -232,28 +233,29 @@ export default function LaunchWizard() {
 
       {/* Step 0: Region Selection */}
       {step === 0 && (
-        <div>
+        <div key="step-0" className="page-enter">
           <h2 style={{ marginBottom: 12 }}>Select Deployment Region</h2>
           <p style={{ color: 'var(--muted)', fontSize: 13, marginBottom: 16 }}>
             Choose the geographic location nearest to your customers for minimal network latency
           </p>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 16 }}>
-            {regions.map((reg) => {
+            {regions.map((reg, idx) => {
               const isSelected = form.region_id === reg.region_id;
               const isFull = reg.capacity === 'full';
 
               return (
                 <div
                   key={reg.region_id}
-                  className="card"
+                  className={`card ${!isFull ? 'card-interactive' : ''} stagger-${(idx % 4) + 1}`}
                   onClick={() => !isFull && setForm(f => ({ ...f, region_id: reg.region_id }))}
                   style={{
                     cursor: isFull ? 'not-allowed' : 'pointer',
                     opacity: isFull ? 0.6 : 1,
                     borderColor: isSelected ? 'var(--brand)' : 'var(--line)',
                     boxShadow: isSelected ? '0 0 0 2px var(--brand)' : 'var(--shadow-card)',
-                    position: 'relative'
+                    position: 'relative',
+                    transition: 'border-color 0.2s var(--ease-out), box-shadow 0.2s var(--ease-out), transform 0.2s var(--ease-out)'
                   }}
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
@@ -281,7 +283,7 @@ export default function LaunchWizard() {
 
       {/* Step 1: Size & Instance Type */}
       {step === 1 && (
-        <div>
+        <div key="step-1" className="page-enter">
           <h2 style={{ marginBottom: 12 }}>Select Instance Hardware Size</h2>
           <p style={{ color: 'var(--muted)', fontSize: 13, marginBottom: 16 }}>
             Transparent pricing based on allocated vCPU, RAM, and NVMe SSD storage
@@ -302,17 +304,20 @@ export default function LaunchWizard() {
                 </tr>
               </thead>
               <tbody>
-                {instanceTypes.map((t) => {
+                {instanceTypes.map((t, idx) => {
                   const isSelected = form.type_id === t.type_id;
                   const hrPrice = Number(t.price_per_hour || 0);
 
                   return (
                     <tr
                       key={t.type_id}
+                      className="table-row-animate"
                       onClick={() => setForm(f => ({ ...f, type_id: t.type_id }))}
                       style={{
                         cursor: 'pointer',
-                        backgroundColor: isSelected ? 'rgba(47, 107, 255, 0.08)' : undefined
+                        animationDelay: `${idx * 0.04}s`,
+                        backgroundColor: isSelected ? 'var(--brand-light)' : undefined,
+                        transition: 'background-color 0.15s var(--ease-out)'
                       }}
                     >
                       <td data-label="Select">
@@ -350,7 +355,7 @@ export default function LaunchWizard() {
 
       {/* Step 2: Machine Image */}
       {step === 2 && (
-        <div>
+        <div key="step-2" className="page-enter">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
             <div>
               <h2>Choose Operating System Image</h2>
@@ -377,18 +382,19 @@ export default function LaunchWizard() {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 16 }}>
             {images
               .filter(img => osFilter === 'all' || img.os_family === osFilter)
-              .map((img) => {
+              .map((img, idx) => {
                 const isSelected = form.image_id === img.image_id;
 
                 return (
                   <div
                     key={img.image_id}
-                    className="card"
+                    className={`card card-interactive stagger-${(idx % 4) + 1}`}
                     onClick={() => setForm(f => ({ ...f, image_id: img.image_id }))}
                     style={{
                       cursor: 'pointer',
                       borderColor: isSelected ? 'var(--brand)' : 'var(--line)',
                       boxShadow: isSelected ? '0 0 0 2px var(--brand)' : 'var(--shadow-card)',
+                      transition: 'border-color 0.2s var(--ease-out), box-shadow 0.2s var(--ease-out), transform 0.2s var(--ease-out)'
                     }}
                   >
                     <div style={{ fontWeight: 600, fontSize: 15, color: 'var(--ink)' }}>{img.name}</div>
@@ -407,7 +413,7 @@ export default function LaunchWizard() {
 
       {/* Step 3: Review & Launch */}
       {step === 3 && (
-        <div>
+        <div key="step-3" className="page-enter">
           <h2 style={{ marginBottom: 12 }}>Review & Finalize Deployment</h2>
           <p style={{ color: 'var(--muted)', fontSize: 13, marginBottom: 16 }}>
             Specify server naming and review your monthly commitment

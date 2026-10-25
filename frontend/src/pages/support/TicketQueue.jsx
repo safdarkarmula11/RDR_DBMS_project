@@ -188,8 +188,8 @@ export default function TicketQueue() {
               <div
                 key={msg.message_id}
                 style={{
-                  background: msg.is_staff ? 'rgba(47, 107, 255, 0.08)' : 'var(--bg)',
-                  border: msg.is_staff ? '1px solid rgba(47, 107, 255, 0.2)' : '1px solid var(--line)',
+                  background: msg.is_staff ? 'var(--brand-light)' : 'var(--bg)',
+                  border: msg.is_staff ? '1px solid var(--line-hover)' : '1px solid var(--line)',
                   borderRadius: 'var(--radius-sm)',
                   padding: 12
                 }}

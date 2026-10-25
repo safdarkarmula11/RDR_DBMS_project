@@ -177,7 +177,7 @@ export default function Reports() {
                   style={{
                     padding: '8px 10px',
                     borderRadius: 'var(--radius-sm)',
-                    background: isSelected ? 'rgba(47, 107, 255, 0.12)' : 'transparent',
+                    background: isSelected ? 'var(--brand-light)' : 'transparent',
                     border: isSelected ? '1px solid var(--brand)' : '1px solid transparent',
                     cursor: 'pointer',
                     transition: 'all 0.15s ease'

@@ -135,8 +135,12 @@ export default function DataTable({
             return (
               <tr
                 key={key}
+                className="table-row-animate"
                 onClick={onRowClick ? () => onRowClick(row) : undefined}
-                style={{ cursor: onRowClick ? 'pointer' : 'default' }}
+                style={{
+                  cursor: onRowClick ? 'pointer' : 'default',
+                  animationDelay: `${Math.min(rowIdx * 25, 300)}ms`
+                }}
                 tabIndex={onRowClick ? 0 : undefined}
                 onKeyDown={
                   onRowClick

@@ -47,14 +47,14 @@ export default function Input({
         required={required}
         aria-invalid={!!error}
         aria-describedby={[error ? errorId : null, hint ? hintId : null].filter(Boolean).join(' ') || undefined}
-        className="input-element"
+        className={`input-element ${error ? 'input-shake' : ''}`.trim()}
         {...props}
       >
         {children}
       </Component>
 
       {error && (
-        <div id={errorId} className="input-error" role="alert">
+        <div id={errorId} className="input-error" role="alert" style={{ animation: 'fadeSlideDown 0.2s var(--ease-out)' }}>
           <span>{error}</span>
         </div>
       )}

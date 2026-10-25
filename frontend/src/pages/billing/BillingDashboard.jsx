@@ -4,6 +4,7 @@ import Button from '../../ui/Button';
 import StatusBadge from '../../ui/StatusBadge';
 import DataTable from '../../ui/DataTable';
 import Skeleton from '../../ui/Skeleton';
+import CountUp from '../../ui/CountUp';
 import { DollarSign, Clock, AlertTriangle, CreditCard, ArrowRight, FilePlus } from 'lucide-react';
 import { useNavigate, Link } from 'react-router-dom';
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
@@ -70,46 +71,46 @@ export default function BillingDashboard() {
 
       {/* KPI Cards */}
       <div className="grid-12" style={{ marginBottom: 24 }}>
-        <div className="card col-3">
+        <div className="card card-interactive col-3 stagger-1">
           <div className="card-header" style={{ marginBottom: 6 }}>
             <span className="card-subtitle">Billed This Month</span>
             <DollarSign size={18} color="var(--ok)" />
           </div>
           <div className="money" style={{ fontSize: 26, fontWeight: 700, textAlign: 'left' }}>
-            ${kpis.monthlyBilled.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+            <CountUp value={kpis.monthlyBilled} prefix="$" decimals={2} />
           </div>
           <div style={{ fontSize: 12, color: 'var(--ok)', marginTop: 4 }}>+4.5% vs previous cycle</div>
         </div>
 
-        <div className="card col-3">
+        <div className="card card-interactive col-3 stagger-2">
           <div className="card-header" style={{ marginBottom: 6 }}>
             <span className="card-subtitle">Outstanding Receivables</span>
             <Clock size={18} color="var(--brand)" />
           </div>
           <div className="money" style={{ fontSize: 26, fontWeight: 700, textAlign: 'left' }}>
-            ${kpis.outstandingReceivables.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+            <CountUp value={kpis.outstandingReceivables} prefix="$" decimals={2} />
           </div>
           <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>Issued & awaiting settlement</div>
         </div>
 
-        <div className="card col-3">
+        <div className="card card-interactive col-3 stagger-3">
           <div className="card-header" style={{ marginBottom: 6 }}>
             <span className="card-subtitle">Overdue Arrears</span>
             <AlertTriangle size={18} color="var(--danger)" />
           </div>
           <div className="money" style={{ fontSize: 26, fontWeight: 700, color: 'var(--danger)', textAlign: 'left' }}>
-            ${kpis.overdueArrears.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+            <CountUp value={kpis.overdueArrears} prefix="$" decimals={2} />
           </div>
           <div style={{ fontSize: 12, color: 'var(--danger)', marginTop: 4 }}>Past payment due date</div>
         </div>
 
-        <div className="card col-3">
+        <div className="card card-interactive col-3 stagger-4">
           <div className="card-header" style={{ marginBottom: 6 }}>
             <span className="card-subtitle">Active Credit Pool</span>
             <CreditCard size={18} color="var(--accent)" />
           </div>
           <div className="money" style={{ fontSize: 26, fontWeight: 700, textAlign: 'left' }}>
-            ${kpis.creditPool.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+            <CountUp value={kpis.creditPool} prefix="$" decimals={2} />
           </div>
           <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>Customer balances held</div>
         </div>

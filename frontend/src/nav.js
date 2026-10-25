@@ -28,7 +28,7 @@ import {
 
 export const NAV = {
   customer: [
-    { to: '/', label: 'Dashboard', icon: LayoutDashboard },
+    { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { to: '/instances', label: 'Instances', icon: Server },
     { to: '/volumes', label: 'Volumes', icon: HardDrive },
     { to: '/snapshots', label: 'Snapshots', icon: Camera },
@@ -65,7 +65,7 @@ export const NAV = {
 };
 
 export const HOME = {
-  customer: '/',
+  customer: '/dashboard',
   super_admin: '/admin/capacity',
   billing: '/billing',
   support: '/support/queue',

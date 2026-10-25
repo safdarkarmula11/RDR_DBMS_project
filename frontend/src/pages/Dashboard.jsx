@@ -7,6 +7,7 @@ import StatusBadge from '../ui/StatusBadge';
 import QuotaBar from '../ui/QuotaBar';
 import Skeleton from '../ui/Skeleton';
 import Drawer from '../ui/Drawer';
+import CountUp from '../ui/CountUp';
 import {
   Server,
   CreditCard,
@@ -138,7 +139,7 @@ export default function Dashboard() {
 
       {/* 4 KPI Cards */}
       <div className="grid-12" style={{ marginBottom: 24 }}>
-        <div className="card col-3">
+        <div className="card card-interactive col-3 stagger-1">
           <div className="card-header" style={{ marginBottom: 8 }}>
             <span className="card-subtitle">Running Instances</span>
             <Server size={18} color="var(--brand)" />
@@ -148,7 +149,7 @@ export default function Dashboard() {
           ) : (
             <div>
               <div style={{ fontSize: 28, fontWeight: 700, color: 'var(--ink)' }}>
-                {kpis.runningCount}
+                <CountUp value={kpis.runningCount} />
               </div>
               <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>
                 Active compute nodes
@@ -157,7 +158,7 @@ export default function Dashboard() {
           )}
         </div>
 
-        <div className="card col-3">
+        <div className="card card-interactive col-3 stagger-2">
           <div className="card-header" style={{ marginBottom: 8 }}>
             <span className="card-subtitle">Estimated Monthly Spend</span>
             <DollarSign size={18} color="var(--ok)" />
@@ -167,7 +168,7 @@ export default function Dashboard() {
           ) : (
             <div>
               <div className="money" style={{ fontSize: 28, fontWeight: 700, color: 'var(--ink)', textAlign: 'left' }}>
-                ${kpis.monthlyCost}
+                <CountUp value={Number(kpis.monthlyCost) || 0} prefix="$" decimals={2} />
               </div>
               <div style={{ fontSize: 12, color: 'var(--ok)', marginTop: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
                 <TrendingUp size={13} />
@@ -177,7 +178,7 @@ export default function Dashboard() {
           )}
         </div>
 
-        <div className="card col-3">
+        <div className="card card-interactive col-3 stagger-3">
           <div className="card-header" style={{ marginBottom: 8 }}>
             <span className="card-subtitle">Available Credits</span>
             <CreditCard size={18} color="var(--accent)" />
@@ -187,7 +188,7 @@ export default function Dashboard() {
           ) : (
             <div>
               <div className="money" style={{ fontSize: 28, fontWeight: 700, color: 'var(--ink)', textAlign: 'left' }}>
-                ${Number(kpis.creditBalance).toFixed(2)}
+                <CountUp value={Number(kpis.creditBalance) || 0} prefix="$" decimals={2} />
               </div>
               <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>
                 Auto-applied to upcoming invoices
@@ -196,7 +197,7 @@ export default function Dashboard() {
           )}
         </div>
 
-        <div className="card col-3">
+        <div className="card card-interactive col-3 stagger-4">
           <div className="card-header" style={{ marginBottom: 8 }}>
             <span className="card-subtitle">Support Tickets</span>
             <LifeBuoy size={18} color="var(--warn)" />
@@ -206,7 +207,7 @@ export default function Dashboard() {
           ) : (
             <div>
               <div style={{ fontSize: 28, fontWeight: 700, color: 'var(--ink)' }}>
-                {kpis.openTickets}
+                <CountUp value={kpis.openTickets} />
               </div>
               <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>
                 Active inquiries with support team
@@ -372,8 +373,12 @@ export default function Dashboard() {
               </tr>
             </thead>
             <tbody>
-              {instances.map((inst) => (
-                <tr key={inst.instance_id}>
+              {instances.map((inst, idx) => (
+                <tr
+                  key={inst.instance_id}
+                  className="table-row-animate"
+                  style={{ animationDelay: `${idx * 0.04}s` }}
+                >
                   <td data-label="Instance Name">
                     <strong style={{ color: 'var(--ink)' }}>{inst.name}</strong>
                   </td>

@@ -4,27 +4,29 @@ import { useAuth } from './AuthContext';
 import Input from '../ui/Input';
 import Button from '../ui/Button';
 import Banner from '../ui/Banner';
-import { Cloud, Lock, Mail } from 'lucide-react';
+import AmbientBackground from '../ui/AmbientBackground';
+import { Lock, Mail } from 'lucide-react';
+import LemonLogo from '../ui/LemonLogo';
 import { HOME } from '../nav';
 
 const DEMO_LOGINS = [
-  { role: 'super_admin', label: 'Super Admin', email: 'admin@nimbus.test', pass: 'admin123' },
-  { role: 'support', label: 'Support', email: 'support@nimbus.test', pass: 'support123' },
-  { role: 'billing', label: 'Billing', email: 'billing@nimbus.test', pass: 'billing123' },
-  { role: 'customer', label: 'Customer Owner', email: 'owner@acme.test', pass: 'customer123' },
-  { role: 'customer', label: 'Customer Member', email: 'dev@acme.test', pass: 'customer123' },
+  { role: 'super_admin', label: 'Super Admin',   email: 'admin@nimbus.test',   pass: 'admin123' },
+  { role: 'support',     label: 'Support',        email: 'support@nimbus.test', pass: 'support123' },
+  { role: 'billing',     label: 'Billing',        email: 'billing@nimbus.test', pass: 'billing123' },
+  { role: 'customer',    label: 'Customer Owner', email: 'owner@acme.test',     pass: 'customer123' },
+  { role: 'customer',    label: 'Customer Member',email: 'dev@acme.test',       pass: 'customer123' },
 ];
 
 export default function LoginPage() {
   const { login } = useAuth();
-  const navigate = useNavigate();
-  const location = useLocation();
+  const navigate  = useNavigate();
+  const location  = useLocation();
 
   const isExpired = new URLSearchParams(location.search).get('expired') === '1';
 
-  const [email, setEmail] = useState('');
+  const [email,    setEmail]    = useState('');
   const [password, setPassword] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [loading,  setLoading]  = useState(false);
   const [errorMsg, setErrorMsg] = useState(null);
 
   const handleSubmit = async (e) => {
@@ -53,45 +55,19 @@ export default function LoginPage() {
   };
 
   return (
-    <div
-      style={{
-        minHeight: '100vh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        background: 'var(--bg)',
-        padding: 24,
-      }}
-    >
-      <div
-        className="card"
-        style={{
-          width: '100%',
-          maxWidth: 440,
-          padding: 32,
-          boxShadow: 'var(--shadow-lg)',
-        }}
-      >
-        <div style={{ textAlign: 'center', marginBottom: 28 }}>
-          <div
-            style={{
-              width: 48,
-              height: 48,
-              background: 'var(--brand)',
-              borderRadius: 'var(--radius-md)',
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: '#FFFFFF',
-              marginBottom: 12,
-            }}
-          >
-            <Cloud size={28} />
+    <div className="auth-root">
+      <AmbientBackground />
+
+      <div className="auth-card">
+        {/* Logo + title */}
+        <div className="auth-logo-wrap">
+          <div className="auth-logo-icon" style={{ background: 'rgba(250, 204, 21, 0.15)', border: '1px solid rgba(250, 204, 21, 0.35)' }}>
+            <LemonLogo size={32} />
           </div>
-          <h1 style={{ fontSize: 22, fontWeight: 700 }}>NimbusHost</h1>
-          <p style={{ color: 'var(--muted)', fontSize: 13, marginTop: 4 }}>
-            Cloud Infrastructure Management System
-          </p>
+          <div>
+            <div className="auth-title">NimbusHost</div>
+            <div className="auth-subtitle">Cloud Infrastructure Management</div>
+          </div>
         </div>
 
         {isExpired && (
@@ -123,53 +99,57 @@ export default function LoginPage() {
             autoComplete="current-password"
           />
 
-          <div style={{ marginTop: 24 }}>
+          <div style={{ marginTop: 22 }}>
             <Button
               type="submit"
               variant="primary"
               loading={loading}
               disabled={loading}
-              style={{ width: '100%' }}
+              style={{ width: '100%', height: 42, fontSize: 14 }}
             >
               Sign In
             </Button>
           </div>
         </form>
 
-        <div style={{ marginTop: 20, textAlign: 'center', fontSize: 13, color: 'var(--muted)' }}>
-          Don't have an account?{' '}
-          <Link to="/register" style={{ fontWeight: 600 }}>
-            Create Organization
-          </Link>
+        <div style={{ marginTop: 16, textAlign: 'center', fontSize: 13, color: 'var(--muted)', display: 'flex', flexDirection: 'column', gap: 7 }}>
+          <div>
+            Don't have an account?{' '}
+            <Link to="/register" style={{ fontWeight: 600, color: 'var(--brand)' }}>
+              Create Organization
+            </Link>
+          </div>
+          <div>
+            <Link
+              to="/landing"
+              style={{ fontSize: 12, color: 'var(--muted)', textDecoration: 'none' }}
+              onMouseEnter={e => e.target.style.color = 'var(--brand)'}
+              onMouseLeave={e => e.target.style.color = 'var(--muted)'}
+            >
+              ← Interactive Platform Tour &amp; Architecture
+            </Link>
+          </div>
         </div>
 
-        <div
-          style={{
-            marginTop: 28,
-            paddingTop: 20,
-            borderTop: '1px solid var(--line)',
-          }}
-        >
-          <div
-            style={{
-              fontSize: 12,
-              fontWeight: 600,
-              color: 'var(--muted)',
-              marginBottom: 10,
-              textTransform: 'uppercase',
-              letterSpacing: '0.5px',
-            }}
-          >
-            Demo One-Click Credentials
+        {/* Demo credentials */}
+        <div style={{ marginTop: 24, paddingTop: 18, borderTop: '1px solid var(--line)' }}>
+          <div style={{
+            fontSize: 11,
+            fontWeight: 700,
+            color: 'var(--subtle)',
+            marginBottom: 10,
+            textTransform: 'uppercase',
+            letterSpacing: '0.06em',
+          }}>
+            Demo one-click credentials
           </div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+          <div className="demo-grid">
             {DEMO_LOGINS.map((demo) => (
               <button
                 key={demo.email}
                 type="button"
-                className="btn btn--secondary btn--sm"
+                className="demo-pill"
                 onClick={() => fillDemo(demo)}
-                style={{ fontSize: 11, padding: '4px 8px' }}
               >
                 {demo.label}
               </button>
@@ -180,4 +160,3 @@ export default function LoginPage() {
     </div>
   );
 }
-

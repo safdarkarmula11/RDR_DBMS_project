@@ -4,6 +4,7 @@ import Shell from './layout/Shell';
 import RequireRole from './auth/RequireRole';
 import LoginPage from './auth/LoginPage';
 import RegisterPage from './auth/RegisterPage';
+import LandingPage from './landing/LandingPage';
 
 // Customer pages
 import Dashboard from './pages/Dashboard';
@@ -83,7 +84,10 @@ function NotFoundPage() {
 export default function App() {
   return (
     <Routes>
-      {/* Public Authentication routes */}
+      {/* Public Landing & Authentication routes */}
+      <Route path="/" element={<LandingPage />} />
+      <Route path="/landing" element={<LandingPage />} />
+      <Route path="/intro" element={<LandingPage />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
 
@@ -91,13 +95,14 @@ export default function App() {
       <Route element={<Shell />}>
         {/* Customer Workspace Routes */}
         <Route
-          path="/"
+          path="/dashboard"
           element={
             <RequireRole allow={['customer', 'super_admin']}>
               <Dashboard />
             </RequireRole>
           }
         />
+        <Route path="/console" element={<Navigate to="/dashboard" replace />} />
         <Route
           path="/instances"
           element={
