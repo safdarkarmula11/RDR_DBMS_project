@@ -53,6 +53,8 @@ proc: BEGIN
   DECLARE v_img INT DEFAULT NULL;
   DECLARE v_host INT DEFAULT NULL;
   DECLARE v_id INT;
+  DECLARE v_cfg JSON;
+  DECLARE v_auto_backup TINYINT(1) DEFAULT 0;
   DECLARE EXIT HANDLER FOR SQLEXCEPTION
   BEGIN
     ROLLBACK;
@@ -63,7 +65,8 @@ proc: BEGIN
   IF p_idempotency_key IS NOT NULL AND p_idempotency_key <> '' THEN
     SELECT instance_id, host_id INTO v_existing_id, v_existing_host
     FROM instances
-    WHERE idempotency_key = p_idempotency_key;
+    WHERE idempotency_key = p_idempotency_key
+      AND org_id = p_org;
 
     IF v_existing_id IS NOT NULL THEN
       SELECT v_existing_id AS instance_id, v_existing_host AS host_id;
@@ -100,6 +103,10 @@ proc: BEGIN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Config must be valid JSON';
   END IF;
 
+  -- READ COMMITTED for this transaction: the quota trigger locks the organization row and then
+  -- counts its instances. Under REPEATABLE READ that count could use a snapshot taken before
+  -- the lock and miss a launch another session just committed; READ COMMITTED reads fresh data.
+  SET TRANSACTION ISOLATION LEVEL READ COMMITTED;
   START TRANSACTION;
 
   -- Best fit: pick fullest host that still fits requirements
@@ -120,8 +127,13 @@ proc: BEGIN
   END IF;
 
   -- Insert instance as pending; triggers validate org quota, tier, and image min_disk
-  INSERT INTO instances(org_id, host_id, type_id, image_id, name, status, config, idempotency_key)
-  VALUES (p_org, v_host, p_type, p_image, p_name, 'pending', COALESCE(CAST(p_config AS JSON), JSON_OBJECT()), p_idempotency_key);
+  -- auto_backup is a real column (not a value buried in the JSON), so strip it out of the free-form config
+  SET v_cfg = COALESCE(CAST(p_config AS JSON), JSON_OBJECT());
+  SET v_auto_backup = IFNULL(JSON_UNQUOTE(JSON_EXTRACT(v_cfg, '$.auto_backup')) = 'true', 0);
+  SET v_cfg = JSON_REMOVE(v_cfg, '$.auto_backup');
+
+  INSERT INTO instances(org_id, host_id, type_id, image_id, name, status, config, auto_backup, idempotency_key)
+  VALUES (p_org, v_host, p_type, p_image, p_name, 'pending', v_cfg, v_auto_backup, p_idempotency_key);
   SET v_id = LAST_INSERT_ID();
 
   -- Allocate IP in the region
@@ -340,8 +352,8 @@ BEGIN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Cannot record usage for a terminated instance';
   END IF;
 
-  INSERT INTO usage_records(recorded_at, instance_id, org_id, type_id, metric, quantity)
-  VALUES (NOW(), p_instance, v_org_id, v_type_id, p_metric, p_quantity);
+  INSERT INTO usage_records(recorded_at, instance_id, metric, quantity)
+  VALUES (NOW(6), p_instance, p_metric, p_quantity);
 
   COMMIT;
 END$$
@@ -358,23 +370,33 @@ BEGIN
   DECLARE v_credit_to_apply DECIMAL(12,2) DEFAULT 0.00;
   DECLARE v_total DECIMAL(12,2) DEFAULT 0.00;
   DECLARE v_pre_credit DECIMAL(12,2) DEFAULT 0.00;
+  DECLARE v_tax_rate DECIMAL(5,2) DEFAULT 18.00;
 
   DECLARE v_cur_inst INT;
   DECLARE v_cur_type INT;
   DECLARE v_cur_name VARCHAR(40);
+  DECLARE v_cur_price DECIMAL(8,4);
   DECLARE v_cur_qty DECIMAL(10,3);
   DECLARE v_unit_price DECIMAL(8,4);
   DECLARE v_item_amount DECIMAL(12,2);
   DECLARE v_done INT DEFAULT 0;
 
+  -- Only compute hours are billed; each row is priced with the price version
+  -- that was valid on the day the usage was recorded.
   DECLARE cur_usage CURSOR FOR
-    SELECT u.instance_id, u.type_id, i.name, SUM(u.quantity) AS total_qty
-    FROM usage_records u
+    SELECT u.instance_id, u.type_id, i.name, pr.price_per_hour, SUM(u.quantity) AS total_qty
+    FROM v_usage_records u
     JOIN instances i ON i.instance_id = u.instance_id
-    WHERE u.org_id = p_org
+    LEFT JOIN pricing pr
+           ON pr.type_id = u.type_id
+          AND DATE(u.recorded_at) >= pr.valid_from
+          AND (pr.valid_to IS NULL OR DATE(u.recorded_at) <= pr.valid_to)
+    WHERE i.org_id = p_org
+      AND u.metric = 'cpu_hour'
       AND u.recorded_at >= p_period_start
       AND u.recorded_at < DATE_ADD(p_period_end, INTERVAL 1 DAY)
-    GROUP BY u.instance_id, u.type_id, i.name;
+    GROUP BY u.instance_id, u.type_id, i.name, pr.price_per_hour
+    ORDER BY u.instance_id, pr.price_per_hour;
 
   DECLARE CONTINUE HANDLER FOR NOT FOUND SET v_done = 1;
   DECLARE EXIT HANDLER FOR SQLEXCEPTION
@@ -399,33 +421,39 @@ BEGIN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Organization not found';
   END IF;
 
-  IF EXISTS (SELECT 1 FROM invoices WHERE org_id = p_org AND period_start = p_period_start) THEN
+  -- Reject any non-void invoice whose period overlaps the requested one
+  IF EXISTS (
+    SELECT 1 FROM invoices
+    WHERE org_id = p_org
+      AND status <> 'void'
+      AND period_start <= p_period_end
+      AND period_end >= p_period_start
+  ) THEN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Invoice already exists for this period';
   END IF;
 
-  -- Create initial draft invoice
-  INSERT INTO invoices(org_id, period_start, period_end, subtotal, tax, credit_applied, total, status)
-  VALUES (p_org, p_period_start, p_period_end, 0.00, 0.00, 0.00, 0.00, 'draft');
+  INSERT INTO invoices(org_id, period_start, period_end, subtotal, tax_rate_pct, credit_applied, status)
+  VALUES (p_org, p_period_start, p_period_end, 0.00, v_tax_rate, 0.00, 'draft');
   SET v_invoice_id = LAST_INSERT_ID();
 
   OPEN cur_usage;
   usage_loop: LOOP
-    FETCH cur_usage INTO v_cur_inst, v_cur_type, v_cur_name, v_cur_qty;
+    FETCH cur_usage INTO v_cur_inst, v_cur_type, v_cur_name, v_cur_price, v_cur_qty;
     IF v_done = 1 THEN
       LEAVE usage_loop;
     END IF;
 
-    SET v_unit_price = COALESCE(fn_hourly_price(v_cur_type, p_period_end), 0.0000);
+    SET v_unit_price = COALESCE(v_cur_price, 0.0000);
     SET v_item_amount = ROUND(v_cur_qty * v_unit_price, 2);
 
-    INSERT INTO invoice_items(invoice_id, instance_id, description, quantity, unit_price, amount)
-    VALUES (v_invoice_id, v_cur_inst, CONCAT('Compute - ', v_cur_name), v_cur_qty, v_unit_price, v_item_amount);
+    INSERT INTO invoice_items(invoice_id, instance_id, description, quantity, unit_price)
+    VALUES (v_invoice_id, v_cur_inst, CONCAT('Compute - ', v_cur_name), v_cur_qty, v_unit_price);
 
     SET v_subtotal = v_subtotal + v_item_amount;
   END LOOP;
   CLOSE cur_usage;
 
-  SET v_tax = ROUND(v_subtotal * 0.18, 2);
+  SET v_tax = ROUND(v_subtotal * v_tax_rate / 100, 2);
   SET v_pre_credit = v_subtotal + v_tax;
   SET v_credit_to_apply = LEAST(v_credit_avail, v_pre_credit);
 
@@ -443,13 +471,17 @@ BEGIN
 
   UPDATE invoices
   SET subtotal = v_subtotal,
-      tax = v_tax,
       credit_applied = v_credit_to_apply,
-      total = v_total,
       status = 'issued',
       issued_at = CURRENT_TIMESTAMP,
       due_date = DATE_ADD(CURRENT_DATE, INTERVAL 30 DAY)
   WHERE invoice_id = v_invoice_id;
+
+  -- Nothing to pay (no usage, or fully covered by credit): close it now so it
+  -- can never turn overdue and trigger a suspension.
+  IF v_total <= 0 THEN
+    UPDATE invoices SET status = 'paid' WHERE invoice_id = v_invoice_id;
+  END IF;
 
   COMMIT;
 
@@ -514,7 +546,8 @@ proc: BEGIN
   IF p_idempotency_key IS NOT NULL AND p_idempotency_key <> '' THEN
     SELECT payment_id INTO v_existing_payment
     FROM payments
-    WHERE idempotency_key = p_idempotency_key;
+    WHERE idempotency_key = p_idempotency_key
+      AND invoice_id = p_invoice;
 
     IF v_existing_payment IS NOT NULL THEN
       SELECT v_existing_payment AS payment_id;
@@ -532,7 +565,7 @@ proc: BEGIN
 
   START TRANSACTION;
 
-  SELECT org_id, status, total
+  SELECT org_id, status, subtotal + ROUND(subtotal * tax_rate_pct / 100, 2) - credit_applied
   INTO v_org_id, v_status, v_total
   FROM invoices
   WHERE invoice_id = p_invoice
@@ -551,6 +584,17 @@ proc: BEGIN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Payment amount exceeds outstanding invoice balance';
   END IF;
 
+  -- Paying from credit must actually spend the credit
+  IF p_method = 'credit' THEN
+    UPDATE organizations
+    SET credit_balance = credit_balance - p_amount
+    WHERE org_id = v_org_id AND credit_balance >= p_amount;
+
+    IF ROW_COUNT() = 0 THEN
+      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Insufficient credit balance';
+    END IF;
+  END IF;
+
   INSERT INTO payments(invoice_id, amount, method, txn_ref, idempotency_key)
   VALUES (p_invoice, p_amount, p_method, p_txn_ref, p_idempotency_key);
   SET v_payment_id = LAST_INSERT_ID();
@@ -566,7 +610,7 @@ proc: BEGIN
   COMMIT;
 
   SELECT v_payment_id AS payment_id;
-END proc$$
+END$$
 
 -- 10. Volume operations
 DROP PROCEDURE IF EXISTS sp_create_volume$$
@@ -954,7 +998,7 @@ BEGIN
     COALESCE(SUM(CASE WHEN metric = 'storage_gb' THEN quantity ELSE 0 END), 0.000) AS storage_gb_hours,
     COALESCE(SUM(CASE WHEN metric = 'egress_gb' THEN quantity ELSE 0 END), 0.000) AS egress_gb,
     COUNT(*) AS record_count
-  FROM usage_records
+  FROM v_usage_records
   WHERE recorded_at >= p_date AND recorded_at < DATE_ADD(p_date, INTERVAL 1 DAY)
   GROUP BY org_id
   ON DUPLICATE KEY UPDATE
@@ -1060,22 +1104,22 @@ BEGIN
   FROM invoices inv
   LEFT JOIN (
     SELECT invoice_id, SUM(amount) AS sum_amt
-    FROM invoice_items
+    FROM v_invoice_items
     GROUP BY invoice_id
   ) act ON act.invoice_id = inv.invoice_id
   WHERE inv.status <> 'draft' AND inv.subtotal <> COALESCE(act.sum_amt, 0.00);
 
   INSERT INTO tmp_consistency_errors (check_name, record_id, message)
-  SELECT 'invoice_total_mismatch', invoice_id,
-         CONCAT('Invoice ', invoice_id, ' total ', total, ' != subtotal ', subtotal, ' + tax ', tax, ' - credit ', credit_applied)
-  FROM invoices
-  WHERE total <> (subtotal + tax - credit_applied);
+  SELECT 'invoice_total_negative', invoice_id,
+         CONCAT('Invoice ', invoice_id, ' total ', total, ' is negative: credit ', credit_applied, ' exceeds subtotal ', subtotal, ' + tax ', tax)
+  FROM v_invoices
+  WHERE total < 0;
 
   -- Check 4: Paid invoices have sum(payments) >= total, unpaid have less
   INSERT INTO tmp_consistency_errors (check_name, record_id, message)
   SELECT 'paid_invoice_underpaid', inv.invoice_id,
          CONCAT('Invoice ', inv.invoice_id, ' marked paid but payments sum to ', COALESCE(p.sum_pay, 0.00), ' < total ', inv.total)
-  FROM invoices inv
+  FROM v_invoices inv
   LEFT JOIN (
     SELECT invoice_id, SUM(amount) AS sum_pay FROM payments GROUP BY invoice_id
   ) p ON p.invoice_id = inv.invoice_id
@@ -1084,7 +1128,7 @@ BEGIN
   INSERT INTO tmp_consistency_errors (check_name, record_id, message)
   SELECT 'unpaid_invoice_fully_paid', inv.invoice_id,
          CONCAT('Invoice ', inv.invoice_id, ' status is ', inv.status, ' but payments sum to ', COALESCE(p.sum_pay, 0.00), ' >= total ', inv.total)
-  FROM invoices inv
+  FROM v_invoices inv
   JOIN (
     SELECT invoice_id, SUM(amount) AS sum_pay FROM payments GROUP BY invoice_id
   ) p ON p.invoice_id = inv.invoice_id
@@ -1092,7 +1136,7 @@ BEGIN
 
   -- Check 5: No orphan usage rows
   INSERT INTO tmp_consistency_errors (check_name, record_id, message)
-  SELECT DISTINCT 'orphan_usage_record', u.usage_id,
+  SELECT DISTINCT 'orphan_usage_record', u.instance_id,
          CONCAT('Usage record references non-existent instance_id ', u.instance_id)
   FROM usage_records u
   LEFT JOIN instances i ON i.instance_id = u.instance_id
@@ -1157,7 +1201,7 @@ BEGIN
   LEFT JOIN (
     SELECT DATE(recorded_at) AS u_date, org_id,
            SUM(CASE WHEN metric = 'cpu_hour' THEN quantity ELSE 0 END) AS sum_cpu
-    FROM usage_records
+    FROM v_usage_records
     GROUP BY DATE(recorded_at), org_id
   ) raw ON raw.u_date = dus.usage_date AND raw.org_id = dus.org_id
   WHERE dus.cpu_hours <> COALESCE(raw.sum_cpu, 0.000);
@@ -1168,5 +1212,105 @@ BEGIN
 
   DROP TEMPORARY TABLE IF EXISTS tmp_consistency_errors;
 END$$
+
+-- ============================================================
+-- STAR SCHEMA ETL: refresh dim_date, dim_org, dim_type and fact_usage_daily
+-- Idempotent: running it again for the same dates replaces the facts.
+-- ============================================================
+DROP PROCEDURE IF EXISTS sp_refresh_star_schema$$
+CREATE PROCEDURE sp_refresh_star_schema(IN p_from DATE, IN p_to DATE)
+BEGIN
+  IF p_from IS NULL OR p_to IS NULL OR p_to < p_from THEN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Invalid date range';
+  END IF;
+  IF DATEDIFF(p_to, p_from) > 3000 THEN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Date range is too large (maximum 3000 days)';
+  END IF;
+
+  SET SESSION cte_max_recursion_depth = 5000;
+
+  -- Date dimension: one row per calendar day
+  INSERT IGNORE INTO dim_date(date_key, full_date, year, month, day, day_of_week)
+  WITH RECURSIVE d(dt) AS (
+    SELECT p_from
+    UNION ALL
+    SELECT DATE_ADD(dt, INTERVAL 1 DAY) FROM d WHERE dt < p_to
+  )
+  SELECT CAST(DATE_FORMAT(dt, '%Y%m%d') AS UNSIGNED), dt, YEAR(dt), MONTH(dt), DAY(dt), DAYOFWEEK(dt)
+  FROM d;
+
+  -- Organization dimension (type 1: current values overwrite old ones)
+  INSERT INTO dim_org(org_id, org_name, tier_name, status)
+  SELECT o.org_id, o.name, t.name, o.status
+  FROM organizations o
+  LEFT JOIN account_tiers t ON t.tier_id = o.tier_id
+  ON DUPLICATE KEY UPDATE org_name = VALUES(org_name), tier_name = VALUES(tier_name), status = VALUES(status);
+
+  -- Instance type dimension
+  INSERT INTO dim_type(type_id, type_name, family, vcpu, ram_gb, disk_gb)
+  SELECT type_id, name, family, vcpu, ram_gb, disk_gb
+  FROM instance_types
+  ON DUPLICATE KEY UPDATE type_name = VALUES(type_name), family = VALUES(family),
+                          vcpu = VALUES(vcpu), ram_gb = VALUES(ram_gb), disk_gb = VALUES(disk_gb);
+
+  -- Fact table: usage per day, organization, instance type and metric
+  INSERT INTO fact_usage_daily(date_key, org_key, type_key, metric, total_quantity, record_count)
+  SELECT CAST(DATE_FORMAT(u.recorded_at, '%Y%m%d') AS UNSIGNED), o.org_key, t.type_key, u.metric,
+         SUM(u.quantity), COUNT(*)
+  FROM v_usage_records u
+  JOIN dim_org  o ON o.org_id  = u.org_id
+  JOIN dim_type t ON t.type_id = u.type_id
+  WHERE u.recorded_at >= p_from AND u.recorded_at < DATE_ADD(p_to, INTERVAL 1 DAY)
+  GROUP BY CAST(DATE_FORMAT(u.recorded_at, '%Y%m%d') AS UNSIGNED), o.org_key, t.type_key, u.metric
+  ON DUPLICATE KEY UPDATE total_quantity = VALUES(total_quantity), record_count = VALUES(record_count);
+
+  SELECT COUNT(*) AS fact_rows
+  FROM fact_usage_daily
+  WHERE date_key BETWEEN CAST(DATE_FORMAT(p_from, '%Y%m%d') AS UNSIGNED)
+                     AND CAST(DATE_FORMAT(p_to,   '%Y%m%d') AS UNSIGNED);
+END$$
+
+-- ============================================================
+-- PARTITION MAINTENANCE: keep monthly partitions ahead of today
+-- Splits the catch-all pmax partition; safe to run repeatedly.
+-- ============================================================
+DROP PROCEDURE IF EXISTS sp_add_future_partitions$$
+CREATE PROCEDURE sp_add_future_partitions(IN p_months_ahead INT)
+BEGIN
+  DECLARE v_i INT DEFAULT 0;
+  DECLARE v_month_start DATE;
+  DECLARE v_bound VARCHAR(10);
+  DECLARE v_last_bound VARCHAR(10) DEFAULT NULL;
+
+  IF p_months_ahead IS NULL OR p_months_ahead < 1 OR p_months_ahead > 36 THEN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Months ahead must be between 1 and 36';
+  END IF;
+
+  SELECT MAX(REPLACE(PARTITION_DESCRIPTION, '''', ''))
+  INTO v_last_bound
+  FROM information_schema.PARTITIONS
+  WHERE TABLE_SCHEMA = DATABASE()
+    AND TABLE_NAME = 'usage_records'
+    AND PARTITION_NAME <> 'pmax';
+
+  WHILE v_i <= p_months_ahead DO
+    SET v_month_start = DATE_ADD(DATE_FORMAT(CURRENT_DATE, '%Y-%m-01'), INTERVAL v_i MONTH);
+    SET v_bound = DATE_FORMAT(DATE_ADD(v_month_start, INTERVAL 1 MONTH), '%Y-%m-%d');
+
+    IF v_last_bound IS NULL OR v_bound > v_last_bound THEN
+      SET @nb_ddl = CONCAT(
+        'ALTER TABLE usage_records REORGANIZE PARTITION pmax INTO (',
+        'PARTITION p', DATE_FORMAT(v_month_start, '%Y_%m'), ' VALUES LESS THAN (''', v_bound, '''), ',
+        'PARTITION pmax VALUES LESS THAN (MAXVALUE))');
+      PREPARE nb_stmt FROM @nb_ddl;
+      EXECUTE nb_stmt;
+      DEALLOCATE PREPARE nb_stmt;
+      SET v_last_bound = v_bound;
+    END IF;
+
+    SET v_i = v_i + 1;
+  END WHILE;
+END$$
+
 
 DELIMITER ;

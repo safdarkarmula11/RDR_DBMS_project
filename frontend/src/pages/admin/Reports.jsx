@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { api } from '../../api';
 import Button from '../../ui/Button';
 import DataTable from '../../ui/DataTable';
@@ -35,91 +35,35 @@ export default function Reports() {
   const [searchFilter, setSearchFilter] = useState('');
   const [executing, setExecuting] = useState(false);
   const [reportResult, setReportResult] = useState(null);
+  const [reportError, setReportError] = useState(null);
+
+  useEffect(() => {
+    setReportResult(null);
+    setReportError(null);
+  }, [selectedReportId]);
 
   const activeReport = REPORTS_CATALOG.find(r => r.id === selectedReportId) || REPORTS_CATALOG[0];
 
+  const prettify = (key) => key.replace(/_/g, ' ').replace(/\b\w/g, (m) => m.toUpperCase());
+  const cell = (v) => (v === null || v === undefined ? '—' : typeof v === 'object' ? JSON.stringify(v) : String(v));
+
   const handleRunReport = async () => {
+    setExecuting(true);
+    setReportError(null);
     try {
-      setExecuting(true);
-      const res = await api.get(`/reports/${activeReport.id}`);
-      if (res && res.data) {
-        setReportResult(res);
-      } else {
-        generateMockResult(activeReport.id);
-      }
-      toast.success(`Report ${activeReport.id} executed successfully.`);
-    } catch {
-      generateMockResult(activeReport.id);
-      toast.success(`Report ${activeReport.id} executed.`);
+      const data = await api.get(`/reports/${activeReport.id}`);
+      const list = Array.isArray(data) ? data : [];
+      const keys = list.length ? Object.keys(list[0]) : [];
+      setReportResult({
+        columns: keys.map((k) => ({ header: prettify(k), accessor: k, align: typeof list[0][k] === 'number' ? 'right' : 'left' })),
+        rows: list.map((row) => Object.fromEntries(keys.map((k) => [k, cell(row[k])]))),
+      });
+      toast.success(`Report ${activeReport.id} returned ${list.length} rows.`);
+    } catch (err) {
+      setReportResult(null);
+      setReportError({ msg: `Report ${activeReport.id} failed.`, hint: err.msg || 'Unexpected error.' });
     } finally {
       setExecuting(false);
-    }
-  };
-
-  const generateMockResult = (id) => {
-    if (id === 'R1') {
-      setReportResult({
-        columns: [
-          { header: 'Region', accessor: 'region' },
-          { header: 'Type Family', accessor: 'family' },
-          { header: 'Active Instances', accessor: 'instances', align: 'right' },
-          { header: 'Total Revenue ($)', accessor: 'revenue', align: 'right', className: 'money' }
-        ],
-        rows: [
-          { region: 'US-East (N. Virginia)', family: 'compute', instances: 45, revenue: '$2,160.00' },
-          { region: 'US-East (N. Virginia)', family: 'general', instances: 38, revenue: '$912.00' },
-          { region: 'US-East (N. Virginia)', family: 'memory', instances: 14, revenue: '$1,680.00' },
-          { region: 'US-East (Subtotal)', family: '—', instances: 97, revenue: '$4,752.00' },
-          { region: 'EU-West (Frankfurt)', family: 'compute', instances: 28, revenue: '$1,344.00' },
-          { region: 'EU-West (Subtotal)', family: '—', instances: 28, revenue: '$1,344.00' },
-          { region: 'GRAND TOTAL', family: '—', instances: 125, revenue: '$6,096.00' },
-        ]
-      });
-    } else if (id === 'R2') {
-      setReportResult({
-        columns: [
-          { header: 'Rank', accessor: 'rank', align: 'center' },
-          { header: 'Customer Organization', accessor: 'org_name' },
-          { header: 'Plan Tier', accessor: 'tier' },
-          { header: 'Total Spend', accessor: 'spend', align: 'right', className: 'money' },
-          { header: 'Share of Global Revenue', accessor: 'share', align: 'right' }
-        ],
-        rows: [
-          { rank: 1, org_name: 'Acme Enterprises', tier: 'Enterprise', spend: '$12,450.00', share: '32.4%' },
-          { rank: 2, org_name: 'Stark Technologies', tier: 'Enterprise', spend: '$8,920.00', share: '23.2%' },
-          { rank: 3, org_name: 'Wayne Logistics', tier: 'Startup', spend: '$4,150.00', share: '10.8%' },
-          { rank: 4, org_name: 'Cyberdyne Systems', tier: 'Startup', spend: '$3,800.00', share: '9.9%' },
-          { rank: 5, org_name: 'Umbrella BioTech', tier: 'Developer', spend: '$1,200.00', share: '3.1%' },
-        ]
-      });
-    } else if (id === 'R10') {
-      setReportResult({
-        columns: [
-          { header: 'Aging Bucket', accessor: 'bucket' },
-          { header: 'Overdue Invoices Count', accessor: 'count', align: 'right' },
-          { header: 'Total Balance Arrears', accessor: 'amount', align: 'right', className: 'money' }
-        ],
-        rows: [
-          { bucket: 'Current (0 - 30 days)', count: 14, amount: '$3,840.00' },
-          { bucket: 'Late (31 - 60 days)', count: 5, amount: '$1,250.00' },
-          { bucket: 'Delinquent (61 - 90 days)', count: 2, amount: '$720.00' },
-          { bucket: 'Severe (90+ days)', count: 1, amount: '$340.00' },
-        ]
-      });
-    } else {
-      setReportResult({
-        columns: [
-          { header: 'Result ID', accessor: 'id', className: 'mono' },
-          { header: 'Entity Name', accessor: 'name' },
-          { header: 'Computed Metric', accessor: 'metric', align: 'right', className: 'mono' },
-          { header: 'Status Tag', accessor: 'status' }
-        ],
-        rows: [
-          { id: '#101', name: 'Primary Cluster Node A', metric: '94.2%', status: 'Active' },
-          { id: '#102', name: 'Secondary Backup Node B', metric: '72.1%', status: 'Active' },
-          { id: '#103', name: 'Staging Database Host', metric: '48.0%', status: 'Standby' },
-        ]
-      });
     }
   };
 
@@ -216,6 +160,8 @@ export default function Reports() {
             </p>
           </div>
 
+          {reportError && <Banner tone="danger" message={reportError.msg} hint={reportError.hint} />}
+
           {/* Results Table */}
           {reportResult ? (
             <div>
@@ -268,4 +214,3 @@ export default function Reports() {
     </div>
   );
 }
-

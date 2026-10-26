@@ -93,13 +93,23 @@ router.post('/members', validate({ body: addMemberSchema }), async (req, res, ne
     const finalRole = member_role || role || 'member';
 
     const result = await withDb(req, async (conn) => {
+      // Only an existing customer account that is not already in another
+      // organization can be added. Every other case returns the same answer,
+      // so this endpoint cannot be used to find out which emails exist.
       const [users] = await conn.execute(
-        'SELECT user_id FROM users WHERE email = ?',
-        [email]
+        `SELECT u.user_id
+           FROM users u
+          WHERE u.email = ?
+            AND u.system_role = 'customer'
+            AND NOT EXISTS (
+              SELECT 1 FROM org_members om
+               WHERE om.user_id = u.user_id AND om.org_id <> ?
+            )`,
+        [email, orgId]
       );
       const user = users[0];
       if (!user) {
-        const err = new Error('No user found with that email address');
+        const err = new Error('No eligible account found for that email. The person must register first and must not belong to another organization.');
         err.statusCode = 404;
         err.code = 'NOT_FOUND';
         throw err;
@@ -400,7 +410,7 @@ router.get('/:id/cost-tree', validate({ params: idParamSchema }), tenantGuard('i
                 COALESCE(SUM(inv.total), 0.00) AS total_invoiced,
                 COALESCE(SUM(p.amount), 0.00) AS total_paid
          FROM org_tree ot
-         LEFT JOIN invoices inv ON inv.org_id = ot.org_id AND inv.status <> 'void'
+         LEFT JOIN v_invoices inv ON inv.org_id = ot.org_id AND inv.status <> 'void'
          LEFT JOIN payments p ON p.invoice_id = inv.invoice_id
          GROUP BY ot.org_id, ot.name, ot.parent_org_id, ot.level
          ORDER BY ot.level, ot.name`,

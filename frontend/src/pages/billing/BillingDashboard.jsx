@@ -8,17 +8,20 @@ import CountUp from '../../ui/CountUp';
 import { DollarSign, Clock, AlertTriangle, CreditCard, ArrowRight, FilePlus } from 'lucide-react';
 import { useNavigate, Link } from 'react-router-dom';
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
+import Banner from '../../ui/Banner';
 
 export default function BillingDashboard() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
   const [kpis, setKpis] = useState({
-    monthlyBilled: 48920.00,
-    outstandingReceivables: 12450.00,
-    overdueArrears: 3840.00,
-    creditPool: 2450.00
+    monthlyBilled: 0,
+    outstandingReceivables: 0,
+    overdueArrears: 0,
+    creditPool: 0
   });
   const [recentInvoices, setRecentInvoices] = useState([]);
+  const [revenueTrend, setRevenueTrend] = useState([]);
 
   useEffect(() => {
     let mounted = true;
@@ -29,15 +32,11 @@ export default function BillingDashboard() {
         if (mounted && data) {
           if (data.kpis) setKpis(data.kpis);
           if (data.recentInvoices) setRecentInvoices(data.recentInvoices);
+          if (data.revenueTrend) setRevenueTrend(data.revenueTrend);
+          setLoadError(null);
         }
-      } catch {
-        // Fallback demo billing data
-        setRecentInvoices([
-          { invoice_id: 1042, org_name: 'Acme Enterprises', period_end: '2026-10-31', total: 180.42, status: 'issued', due_date: '2026-11-15' },
-          { invoice_id: 1041, org_name: 'Stark Technologies', period_end: '2026-10-31', total: 1420.00, status: 'issued', due_date: '2026-11-15' },
-          { invoice_id: 1039, org_name: 'Wayne Logistics', period_end: '2026-09-30', total: 640.00, status: 'overdue', due_date: '2026-10-15' },
-          { invoice_id: 1038, org_name: 'Cyberdyne Systems', period_end: '2026-09-30', total: 920.50, status: 'paid', due_date: '2026-10-15' },
-        ]);
+      } catch (err) {
+        setLoadError({ msg: 'Could not load the billing overview.', hint: err.msg });
       } finally {
         if (mounted) setLoading(false);
       }
@@ -46,16 +45,10 @@ export default function BillingDashboard() {
     return () => { mounted = false; };
   }, []);
 
-  const revenueTrend = [
-    { month: 'Jun', revenue: 38200 },
-    { month: 'Jul', revenue: 41500 },
-    { month: 'Aug', revenue: 44200 },
-    { month: 'Sep', revenue: 46800 },
-    { month: 'Oct', revenue: 48920 },
-  ];
 
   return (
     <div>
+      {loadError && <Banner tone="danger" message={loadError.msg} hint={loadError.hint} />}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
         <div>
           <h1>Billing & Accounts Receivable</h1>
@@ -120,7 +113,7 @@ export default function BillingDashboard() {
       <div className="card" style={{ marginBottom: 24 }}>
         <div className="card-header">
           <div>
-            <div className="card-title">Recurring Cloud Revenue (Trailing 5 Months)</div>
+            <div className="card-title">Recurring Cloud Revenue (Trailing 6 Months)</div>
             <div className="card-subtitle">Net settled accounts volume</div>
           </div>
           <Link to="/billing/revenue" style={{ fontSize: 13, display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -134,7 +127,7 @@ export default function BillingDashboard() {
             <AreaChart data={revenueTrend} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--line)" />
               <XAxis dataKey="month" tick={{ fill: 'var(--muted)', fontSize: 12 }} />
-              <YAxis tick={{ fill: 'var(--muted)', fontSize: 12 }} tickFormatter={(val) => `$${val / 1000}k`} />
+              <YAxis tick={{ fill: 'var(--muted)', fontSize: 12 }} tickFormatter={(val) => `$${val}`} />
               <Tooltip formatter={(val) => [`$${Number(val).toLocaleString()}`, 'Revenue']} />
               <Area type="monotone" dataKey="revenue" stroke="var(--brand)" fill="var(--brand)" fillOpacity={0.15} />
             </AreaChart>
@@ -178,4 +171,3 @@ export default function BillingDashboard() {
     </div>
   );
 }
-

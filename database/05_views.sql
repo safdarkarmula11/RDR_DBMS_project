@@ -26,7 +26,7 @@ JOIN regions r ON r.region_id = h.region_id;
 CREATE OR REPLACE VIEW v_instances AS
 SELECT i.instance_id, i.org_id, o.name AS org_name, i.name, i.status,
        t.name AS type_name, t.vcpu, t.ram_gb, t.disk_gb,
-       CONCAT(im.name, ' ', im.version) AS image,
+       CONCAT(os.name, ' ', im.version) AS image,
        r.code AS region_code, r.name AS region_name, h.hostname,
        ip.ip_address, i.auto_backup, i.created_at, i.terminated_at,
        fn_hourly_price(i.type_id, CURRENT_DATE) AS price_per_hour
@@ -34,6 +34,7 @@ FROM instances i
 JOIN organizations o   ON o.org_id   = i.org_id
 JOIN instance_types t  ON t.type_id  = i.type_id
 JOIN images im         ON im.image_id = i.image_id
+JOIN operating_systems os ON os.os_id = im.os_id
 JOIN hosts h           ON h.host_id  = i.host_id
 JOIN regions r         ON r.region_id = h.region_id
 LEFT JOIN ip_addresses ip ON ip.instance_id = i.instance_id;
@@ -41,7 +42,7 @@ LEFT JOIN ip_addresses ip ON ip.instance_id = i.instance_id;
 CREATE OR REPLACE VIEW v_running_instances AS
 SELECT i.instance_id, i.org_id, o.name AS org_name, i.name, i.status,
        t.name AS type_name, t.vcpu, t.ram_gb, t.disk_gb,
-       CONCAT(im.name, ' ', im.version) AS image,
+       CONCAT(os.name, ' ', im.version) AS image,
        r.code AS region_code, r.name AS region_name, h.hostname,
        ip.ip_address, i.auto_backup, i.created_at, i.terminated_at,
        fn_hourly_price(i.type_id, CURRENT_DATE) AS price_per_hour
@@ -49,6 +50,7 @@ FROM instances i
 JOIN organizations o   ON o.org_id   = i.org_id
 JOIN instance_types t  ON t.type_id  = i.type_id
 JOIN images im         ON im.image_id = i.image_id
+JOIN operating_systems os ON os.os_id = im.os_id
 JOIN hosts h           ON h.host_id  = i.host_id
 JOIN regions r         ON r.region_id = h.region_id
 LEFT JOIN ip_addresses ip ON ip.instance_id = i.instance_id
@@ -140,7 +142,7 @@ SELECT o.org_id,
        COALESCE(SUM(inv.credit_applied), 0.00) AS credit_applied,
        COALESCE(SUM(inv.total), 0.00) AS total_billed,
        COUNT(inv.invoice_id) AS invoice_count
-FROM invoices inv
+FROM v_invoices inv
 JOIN organizations o ON o.org_id = inv.org_id
 WHERE inv.status IN ('issued', 'paid', 'overdue')
 GROUP BY o.org_id, o.name, DATE_FORMAT(inv.period_start, '%Y-%m');
@@ -166,7 +168,7 @@ SELECT inv.invoice_id,
          WHEN DATEDIFF(CURRENT_DATE, inv.due_date) <= 90 THEN '61-90 days'
          ELSE '90+ days'
        END AS aging_bucket
-FROM invoices inv
+FROM v_invoices inv
 JOIN organizations o ON o.org_id = inv.org_id
 WHERE inv.status = 'overdue' OR (inv.status = 'issued' AND inv.due_date < CURRENT_DATE);
 
@@ -179,7 +181,7 @@ SELECT r.region_id,
 FROM regions r
 LEFT JOIN hosts h ON h.region_id = r.region_id
 LEFT JOIN instances i ON i.host_id = h.host_id
-LEFT JOIN invoice_items ii ON ii.instance_id = i.instance_id
+LEFT JOIN v_invoice_items ii ON ii.instance_id = i.instance_id
 LEFT JOIN invoices inv ON inv.invoice_id = ii.invoice_id AND inv.status = 'paid'
 GROUP BY r.region_id, r.code, r.name;
 
@@ -256,7 +258,7 @@ WHERE org_id = fn_current_org_id();
 
 CREATE OR REPLACE VIEW v_my_invoices AS
 SELECT *
-FROM invoices
+FROM v_invoices
 WHERE org_id = fn_current_org_id();
 
 CREATE OR REPLACE VIEW v_my_tickets AS
@@ -266,6 +268,22 @@ WHERE org_id = fn_current_org_id();
 
 CREATE OR REPLACE VIEW v_my_usage AS
 SELECT *
-FROM usage_records
+FROM v_usage_records
 WHERE org_id = fn_current_org_id();
 
+-- Images with their operating system (keeps the old "name / os_family / version" shape for callers)
+CREATE OR REPLACE VIEW v_images AS
+SELECT im.image_id, os.name, os.os_family, im.version, im.min_disk_gb
+FROM images im
+JOIN operating_systems os ON os.os_id = im.os_id;
+
+-- Star-schema view: monthly usage by organization, tier, instance type and metric
+CREATE OR REPLACE VIEW v_star_usage_monthly AS
+SELECT d.year, d.month, m.month_name, o.org_name, o.tier_name, t.type_name, f.metric,
+       SUM(f.total_quantity) AS total_quantity, SUM(f.record_count) AS record_count
+FROM fact_usage_daily f
+JOIN dim_date  d ON d.date_key = f.date_key
+JOIN dim_month m ON m.month    = d.month
+JOIN dim_org  o ON o.org_key  = f.org_key
+JOIN dim_type t ON t.type_key = f.type_key
+GROUP BY d.year, d.month, m.month_name, o.org_name, o.tier_name, t.type_name, f.metric;

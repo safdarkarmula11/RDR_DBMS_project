@@ -25,16 +25,12 @@ export default function Simulator() {
       await api.post(endpoint, payload);
       toast.success(`${label} completed successfully.`);
       addLog(label, 'Backend procedure executed successfully.');
-    } catch {
-      // Graceful local simulation feedback
-      setTimeout(() => {
-        toast.success(`${label} simulated.`);
-        addLog(label, 'Simulated successfully in sandbox mode.');
-        setRunningAction(null);
-      }, 500);
-      return;
+    } catch (err) {
+      toast.error(`${label} failed: ${err.msg || 'unexpected error'}`);
+      addLog(label, `Failed: ${err.msg || 'unexpected error'}`);
+    } finally {
+      setRunningAction(null);
     }
-    setRunningAction(null);
   };
 
   return (
@@ -74,7 +70,7 @@ export default function Simulator() {
             <Clock size={20} color="var(--ok)" />
           </div>
           <p style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 16 }}>
-            Executes <code className="mono">sp_generate_monthly_invoices()</code>, aggregates unbilled usage records, applies credits, and issues new invoices.
+            Executes <code className="mono">sp_run_monthly_billing()</code>, aggregates unbilled usage records, applies credits, and issues new invoices.
           </p>
           <Button
             variant="secondary"
@@ -137,4 +133,3 @@ export default function Simulator() {
     </div>
   );
 }
-

@@ -22,7 +22,7 @@ try {
     console.log(`Dropping database ${DB_NAME} ...`);
     await conn.query(`DROP DATABASE IF EXISTS \`${DB_NAME}\``);
   }
-  await conn.query(`CREATE DATABASE IF NOT EXISTS \`${DB_NAME}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci`);
+  await conn.query(`CREATE DATABASE IF NOT EXISTS \`${DB_NAME}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
   await conn.query(`USE \`${DB_NAME}\``);
   await conn.query(`CREATE TABLE IF NOT EXISTS _migrations (
       filename   VARCHAR(120) PRIMARY KEY,

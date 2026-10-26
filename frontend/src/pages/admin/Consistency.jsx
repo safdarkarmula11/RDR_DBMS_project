@@ -15,7 +15,7 @@ export default function Consistency() {
     { id: 'chk_2', name: 'Host Capacity vs Active Virtual Allocations', status: 'pass', issues_count: 0, details: 'Physical host used_vcpu, used_ram_gb, used_disk_gb match active VM rows exactly.' },
     { id: 'chk_3', name: 'Tenant Tier Quota Compliance', status: 'pass', issues_count: 0, details: 'No tenant exceeds allocated compute instance count or persistent storage quotas.' },
     { id: 'chk_4', name: 'Public IP Pool Orphan Verification', status: 'pass', issues_count: 0, details: 'No IP is allocated to a terminated or nonexistent instance ID.' },
-    { id: 'chk_5', name: 'Invoice Item Arithmetic & Total Integrity', status: 'pass', issues_count: 0, details: 'CHECK total = subtotal + tax - credit_applied holds across 100% of invoice records.' },
+    { id: 'chk_5', name: 'Invoice Item Arithmetic & Total Integrity', status: 'pass', issues_count: 0, details: 'Invoice total is derived (subtotal + tax - credit), never negative, and subtotal equals the sum of line items.' },
     { id: 'chk_6', name: 'Partition Boundary Alignment (usage_records)', status: 'pass', issues_count: 0, details: 'RANGE COLUMNS monthly partitions are active and properly bounded.' },
   ]);
 

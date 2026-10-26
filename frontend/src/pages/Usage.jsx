@@ -32,17 +32,7 @@ export default function Usage() {
         setLoading(true);
         const data = await api.get('/usage');
 
-        const fallback = [
-          { date: '2026-10-10', cpu_hours: 144.2, storage_gb_hours: 8400.0, egress_gb: 42.1 },
-          { date: '2026-10-11', cpu_hours: 144.0, storage_gb_hours: 8400.0, egress_gb: 38.6 },
-          { date: '2026-10-12', cpu_hours: 168.5, storage_gb_hours: 9200.0, egress_gb: 55.4 },
-          { date: '2026-10-13', cpu_hours: 192.0, storage_gb_hours: 9600.0, egress_gb: 61.2 },
-          { date: '2026-10-14', cpu_hours: 192.0, storage_gb_hours: 9600.0, egress_gb: 59.8 },
-          { date: '2026-10-15', cpu_hours: 216.4, storage_gb_hours: 10400.0, egress_gb: 78.5 },
-          { date: '2026-10-16', cpu_hours: 216.0, storage_gb_hours: 10400.0, egress_gb: 72.0 },
-        ];
-
-        const rows = Array.isArray(data) && data.length ? data : fallback;
+        const rows = Array.isArray(data) ? data : [];
         if (mounted) {
           setChartData(rows);
           setSummaryRows(rows);

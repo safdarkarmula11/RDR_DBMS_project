@@ -52,7 +52,7 @@ router.get('/images', async (req, res, next) => {
     const rows = await withDb(req, async (conn) => {
       const [result] = await conn.execute(
         `SELECT image_id, name, os_family, version, min_disk_gb
-         FROM images
+         FROM v_images
          ORDER BY os_family ASC, name ASC, version ASC`
       );
       return result;

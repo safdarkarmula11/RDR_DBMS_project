@@ -19,7 +19,7 @@ router.use(authenticate);
 // Helper to check invoice ownership
 async function verifyInvoiceAccess(conn, user, invoiceId) {
   const [rows] = await conn.execute(
-    'SELECT invoice_id, org_id, status FROM invoices WHERE invoice_id = ?',
+    'SELECT invoice_id, org_id, status FROM v_invoices WHERE invoice_id = ?',
     [invoiceId]
   );
   const inv = rows[0];
@@ -42,7 +42,7 @@ router.get('/invoices', async (req, res, next) => {
     const rows = await withDb(req, async (conn) => {
       const sql = `SELECT i.*, o.name AS org_name,
                           fn_invoice_balance(i.invoice_id) AS balance
-                   FROM invoices i
+                   FROM v_invoices i
                    JOIN organizations o ON o.org_id = i.org_id
                    ${isCustomer ? 'WHERE i.org_id = ?' : ''}
                    ORDER BY i.period_start DESC, i.invoice_id DESC`;
@@ -67,7 +67,7 @@ router.get('/invoices/:id', validate({ params: idParamSchema }), async (req, res
 
       const [invoiceRows] = await conn.execute(
         `SELECT i.*, o.name AS org_name, fn_invoice_balance(i.invoice_id) AS balance
-         FROM invoices i
+         FROM v_invoices i
          JOIN organizations o ON o.org_id = i.org_id
          WHERE i.invoice_id = ?`,
         [invoiceId]
@@ -75,7 +75,7 @@ router.get('/invoices/:id', validate({ params: idParamSchema }), async (req, res
 
       const [items] = await conn.execute(
         `SELECT item_id, invoice_id, instance_id, description, quantity, unit_price, amount
-         FROM invoice_items
+         FROM v_invoice_items
          WHERE invoice_id = ?
          ORDER BY item_id ASC`,
         [invoiceId]
@@ -175,7 +175,7 @@ router.get('/aging', requireRole('super_admin', 'billing'), async (req, res, nex
           END AS bucket,
           COUNT(*) AS overdue_count,
           COALESCE(SUM(total), 0) AS total_amount
-        FROM invoices
+        FROM v_invoices
         WHERE status = 'overdue'
         GROUP BY bucket
       `);
@@ -190,7 +190,7 @@ router.get('/aging', requireRole('super_admin', 'billing'), async (req, res, nex
                  ELSE 'Severe (90+d)'
                END AS bucket,
                i.status
-        FROM invoices i
+        FROM v_invoices i
         JOIN organizations o ON o.org_id = i.org_id
         WHERE i.status = 'overdue'
         ORDER BY i.due_date ASC
@@ -227,20 +227,30 @@ router.get('/overview', requireRole('super_admin', 'billing'), async (req, res, 
           COALESCE(SUM(CASE WHEN period_start >= DATE_SUB(CURRENT_DATE, INTERVAL 30 DAY) THEN total ELSE 0 END), 0) AS monthlyBilled,
           COALESCE(SUM(CASE WHEN status IN ('issued', 'overdue') THEN total ELSE 0 END), 0) AS outstandingReceivables,
           COALESCE(SUM(CASE WHEN status = 'overdue' THEN total ELSE 0 END), 0) AS overdueArrears
-        FROM invoices
+        FROM v_invoices
       `);
 
       const [orgKpi] = await conn.execute(`SELECT COALESCE(SUM(credit_balance), 0) AS creditPool FROM organizations`);
 
       const [recentInvoices] = await conn.execute(`
         SELECT i.invoice_id, o.name AS org_name, i.period_end, i.total, i.status, i.due_date
-        FROM invoices i
+        FROM v_invoices i
         JOIN organizations o ON o.org_id = i.org_id
         ORDER BY i.invoice_id DESC
         LIMIT 10
       `);
 
+      const [trend] = await conn.execute(`
+        SELECT DATE_FORMAT(period_start, '%b %Y') AS month, SUM(total) AS revenue
+        FROM v_invoices
+        WHERE status <> 'void'
+          AND period_start >= DATE_SUB(DATE_FORMAT(CURRENT_DATE, '%Y-%m-01'), INTERVAL 5 MONTH)
+        GROUP BY YEAR(period_start), MONTH(period_start), DATE_FORMAT(period_start, '%b %Y')
+        ORDER BY YEAR(period_start), MONTH(period_start)
+      `);
+
       return {
+        revenueTrend: trend.map((r) => ({ month: r.month, revenue: Number(r.revenue) })),
         kpis: {
           monthlyBilled: Number(invKpis[0]?.monthlyBilled || 0),
           outstandingReceivables: Number(invKpis[0]?.outstandingReceivables || 0),
@@ -264,7 +274,7 @@ router.get('/organizations', requireRole('super_admin', 'billing'), async (req, 
       const [rows] = await conn.execute(`
         SELECT o.org_id, o.name, o.credit_balance, o.status, t.name AS tier_name
         FROM organizations o
-        LEFT JOIN tiers t ON t.tier_id = o.tier_id
+        LEFT JOIN account_tiers t ON t.tier_id = o.tier_id
         ORDER BY o.name ASC
       `);
       return rows;
@@ -315,7 +325,7 @@ const handleInvoiceGeneration = async (req, res, next) => {
           SELECT COUNT(*) AS invoices_generated,
                  COALESCE(SUM(total), 0) AS total_billed,
                  COALESCE(SUM(credit_applied), 0) AS credits_applied
-          FROM invoices
+          FROM v_invoices
           WHERE period_start = ? AND period_end = ?
         `, [period_start, period_end]);
 
@@ -334,11 +344,13 @@ const handleInvoiceGeneration = async (req, res, next) => {
           throw err;
         }
 
-        const inv = await generateInvoice(conn, {
+        const created = await generateInvoice(conn, {
           orgId: targetOrg,
           periodStart: period_start,
           periodEnd: period_end,
         });
+        const [invRows] = await conn.execute('SELECT * FROM v_invoices WHERE invoice_id = ?', [created?.invoice_id]);
+        const inv = invRows[0] || created || {};
 
         return {
           invoices_generated: 1,
@@ -393,7 +405,7 @@ router.get('/usage', async (req, res, next) => {
 
     const rows = await withDb(req, async (conn) => {
       const sql = `SELECT u.*, i.name AS instance_name
-                   FROM usage_records u
+                   FROM v_usage_records u
                    JOIN instances i ON i.instance_id = u.instance_id
                    ${isCustomer ? 'WHERE u.org_id = ?' : ''}
                    ORDER BY u.recorded_at DESC

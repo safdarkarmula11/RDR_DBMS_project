@@ -16,6 +16,7 @@ export default function Tickets() {
 
   const [tickets, setTickets] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTicket, setSelectedTicket] = useState(null);
   const [threadMessages, setThreadMessages] = useState([]);
@@ -29,13 +30,9 @@ export default function Tickets() {
       setLoading(true);
       const data = await api.get('/tickets');
       setTickets(Array.isArray(data) ? data : []);
-    } catch {
-      // Fallback demo tickets
-      setTickets([
-        { ticket_id: 101, subject: 'Cannot mount SSD volume to staging instance', priority: 'high', status: 'in_progress', created_by_name: 'Alice Johnson', created_at: '2026-10-15 14:20:00' },
-        { ticket_id: 102, subject: 'Reverse DNS PTR record request for elastic IP', priority: 'medium', status: 'open', created_by_name: 'Bob Smith', created_at: '2026-10-16 09:15:00' },
-        { ticket_id: 95, subject: 'Query regarding volume snapshot retention policy', priority: 'low', status: 'resolved', created_by_name: 'Alice Johnson', created_at: '2026-10-10 11:00:00' }
-      ]);
+    } catch (err) {
+      setTickets([]);
+      setLoadError({ msg: 'Could not load tickets.', hint: err.msg });
     } finally {
       setLoading(false);
     }
@@ -50,11 +47,9 @@ export default function Tickets() {
     try {
       const msgs = await api.get(`/tickets/${ticket.ticket_id}/messages`);
       setThreadMessages(Array.isArray(msgs) ? msgs : []);
-    } catch {
-      setThreadMessages([
-        { message_id: 1, sender_name: ticket.created_by_name || 'Customer', is_staff: false, body: 'Hello Nimbus Support, we are seeing an error when trying to mount volume data-vol-01 to our new server. Please assist.', created_at: ticket.created_at },
-        { message_id: 2, sender_name: 'Support Agent Dave', is_staff: true, body: 'We are looking into this issue right now. The host lock has been released; please retry mounting now.', created_at: '2026-10-15 15:00:00' }
-      ]);
+    } catch (err) {
+      setThreadMessages([]);
+      toast.error(err.msg || 'Could not load the conversation.');
     }
   };
 
@@ -109,6 +104,7 @@ export default function Tickets() {
 
   return (
     <div>
+      {loadError && <Banner tone="danger" message={loadError.msg} hint={loadError.hint} />}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
         <div>
           <h1>Customer Support Tickets</h1>

@@ -1,5 +1,5 @@
 -- ============================================================
--- NimbusHost | 12_seed.sql
+-- NimbusHost | 07_seed.sql
 -- Reference data + demo organizations (no demo instances).
 -- Run with: npm run db:setup   then: npm run seed-users
 -- ============================================================
@@ -43,14 +43,22 @@ INSERT INTO instance_types(name, family, vcpu, ram_gb, disk_gb) VALUES
   ('c-large',  'compute',  4,   8,   80),
   ('m-large',  'memory',   4,  32,  160);
 
-INSERT INTO images(name, os_family, version, min_disk_gb) VALUES
-  ('Ubuntu',          'linux',   '22.04', 10),
-  ('Ubuntu',          'linux',   '24.04', 10),
-  ('Debian',          'linux',   '12',    10),
-  ('Rocky Linux',     'linux',   '9',     15),
-  ('Alpine Linux',    'linux',   '3.19',  5),
-  ('Windows Server',  'windows', '2022',  40),
-  ('FreeBSD',         'bsd',     '14.0',  10);
+INSERT INTO operating_systems(name, os_family) VALUES
+  ('Ubuntu',         'linux'),
+  ('Debian',         'linux'),
+  ('Rocky Linux',    'linux'),
+  ('Alpine Linux',   'linux'),
+  ('Windows Server', 'windows'),
+  ('FreeBSD',        'bsd');
+
+INSERT INTO images(os_id, version, min_disk_gb) VALUES
+  ((SELECT os_id FROM operating_systems WHERE name = 'Ubuntu'),         '22.04', 10),
+  ((SELECT os_id FROM operating_systems WHERE name = 'Ubuntu'),         '24.04', 10),
+  ((SELECT os_id FROM operating_systems WHERE name = 'Debian'),         '12',    10),
+  ((SELECT os_id FROM operating_systems WHERE name = 'Rocky Linux'),    '9',     15),
+  ((SELECT os_id FROM operating_systems WHERE name = 'Alpine Linux'),   '3.19',  5),
+  ((SELECT os_id FROM operating_systems WHERE name = 'Windows Server'), '2022',  40),
+  ((SELECT os_id FROM operating_systems WHERE name = 'FreeBSD'),        '14.0',  10);
 
 INSERT INTO pricing(type_id, price_per_hour, valid_from) VALUES
   ((SELECT type_id FROM instance_types WHERE name = 'nano'),    0.0060, '2026-01-01'),

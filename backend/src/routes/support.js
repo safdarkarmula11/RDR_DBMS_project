@@ -148,7 +148,7 @@ router.get('/customers', async (req, res, next) => {
                COALESCE(tk.open_tickets, 0) AS open_tickets,
                o.credit_balance, o.created_at
         FROM organizations o
-        LEFT JOIN tiers t ON t.tier_id = o.tier_id
+        LEFT JOIN account_tiers t ON t.tier_id = o.tier_id
         LEFT JOIN (
           SELECT org_id, COUNT(*) AS active_instances 
           FROM instances 

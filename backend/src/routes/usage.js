@@ -15,7 +15,7 @@ router.get('/', async (req, res, next) => {
 
     const rows = await withDb(req, async (conn) => {
       const sql = `SELECT u.*, i.name AS instance_name
-                   FROM usage_records u
+                   FROM v_usage_records u
                    JOIN instances i ON i.instance_id = u.instance_id
                    ${isCustomer ? 'WHERE u.org_id = ?' : ''}
                    ORDER BY u.recorded_at DESC

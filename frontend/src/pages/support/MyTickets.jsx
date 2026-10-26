@@ -7,6 +7,7 @@ import DataTable from '../../ui/DataTable';
 import Drawer from '../../ui/Drawer';
 import { UserCheck, CheckCircle2, Send } from 'lucide-react';
 import { useToast } from '../../ui/Toast';
+import Banner from '../../ui/Banner';
 
 export default function MyTickets() {
   const { user } = useAuth();
@@ -14,6 +15,7 @@ export default function MyTickets() {
 
   const [myTickets, setMyTickets] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
   const [selectedTicket, setSelectedTicket] = useState(null);
   const [threadMessages, setThreadMessages] = useState([]);
   const [replyText, setReplyText] = useState('');
@@ -23,11 +25,10 @@ export default function MyTickets() {
     try {
       setLoading(true);
       const data = await api.get('/support/my-tickets');
-      const fallback = [
-        { ticket_id: 101, subject: 'Cannot mount SSD volume to staging instance', priority: 'high', org_name: 'Acme Enterprises', status: 'in_progress', hours_left: 2.5, created_at: '2026-10-16 14:20:00' },
-        { ticket_id: 97, subject: 'Firewall security group rule consultation', priority: 'medium', org_name: 'Stark Technologies', status: 'in_progress', hours_left: 18.0, created_at: '2026-10-14 10:00:00' },
-      ];
-      setMyTickets(Array.isArray(data) && data.length ? data : fallback);
+      setMyTickets(Array.isArray(data) ? data : []);
+      setLoadError(null);
+    } catch (err) {
+      setLoadError({ msg: 'Could not load your tickets.', hint: err.msg });
     } finally {
       setLoading(false);
     }
@@ -42,10 +43,9 @@ export default function MyTickets() {
     try {
       const msgs = await api.get(`/tickets/${ticket.ticket_id}/messages`);
       setThreadMessages(Array.isArray(msgs) ? msgs : []);
-    } catch {
-      setThreadMessages([
-        { message_id: 1, sender_name: 'Alice Johnson', is_staff: false, body: 'We are experiencing mount errors on data-vol-01.', created_at: ticket.created_at }
-      ]);
+    } catch (err) {
+      setThreadMessages([]);
+      toast.error(err.msg || 'Could not load the conversation.');
     }
   };
 
@@ -91,6 +91,7 @@ export default function MyTickets() {
 
   return (
     <div>
+      {loadError && <Banner tone="danger" message={loadError.msg} hint={loadError.hint} />}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
         <div>
           <h1>My Assigned Tickets</h1>

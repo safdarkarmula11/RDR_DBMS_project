@@ -97,14 +97,39 @@ BEGIN
 END$$
 
 -- 5. Monthly usage partition cleanup (runs monthly)
--- Drops monthly partitions older than 12 months
+-- Drops monthly partitions older than 24 months
 DROP EVENT IF EXISTS ev_purge_usage$$
 CREATE EVENT IF NOT EXISTS ev_purge_usage
 ON SCHEDULE EVERY 1 MONTH
 DO
 BEGIN
   DECLARE CONTINUE HANDLER FOR SQLEXCEPTION BEGIN END;
-  CALL sp_drop_old_partitions(12);
+  CALL sp_drop_old_partitions(24);
+END$$
+
+-- Refreshes the star schema for yesterday and today, daily at 00:30
+DROP EVENT IF EXISTS ev_refresh_star$$
+CREATE EVENT IF NOT EXISTS ev_refresh_star
+ON SCHEDULE EVERY 1 DAY
+STARTS (CURRENT_DATE + INTERVAL 1 DAY + INTERVAL 30 MINUTE)
+DO
+BEGIN
+  DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
+    INSERT INTO billing_errors(org_id, error_message, context)
+    VALUES (NULL, 'Star schema refresh failed', JSON_OBJECT('event', 'ev_refresh_star'));
+  CALL sp_refresh_star_schema(DATE_SUB(CURRENT_DATE, INTERVAL 1 DAY), CURRENT_DATE);
+END$$
+
+-- Keeps monthly usage partitions ready for the next 6 months (runs monthly)
+DROP EVENT IF EXISTS ev_add_partitions$$
+CREATE EVENT IF NOT EXISTS ev_add_partitions
+ON SCHEDULE EVERY 1 MONTH
+DO
+BEGIN
+  DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
+    INSERT INTO billing_errors(org_id, error_message, context)
+    VALUES (NULL, 'Adding usage partitions failed', JSON_OBJECT('event', 'ev_add_partitions'));
+  CALL sp_add_future_partitions(6);
 END$$
 
 DELIMITER ;

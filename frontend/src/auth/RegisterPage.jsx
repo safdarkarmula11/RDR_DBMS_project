@@ -37,7 +37,17 @@ export default function RegisterPage() {
     setErrorMsg(null);
     try {
       // Call backend register endpoint
-      await api.post('/auth/register', form);
+      if (form.password.length < 12) {
+        setErrorMsg('Password must be at least 12 characters.');
+        setLoading(false);
+        return;
+      }
+      await api.post('/auth/register', {
+        org_name: form.orgName.trim(),
+        full_name: form.fullName.trim(),
+        email: form.email.trim(),
+        password: form.password,
+      });
       // Auto login on successful registration
       await login(form.email, form.password);
       navigate('/dashboard');

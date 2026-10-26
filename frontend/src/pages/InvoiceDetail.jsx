@@ -31,27 +31,10 @@ export default function InvoiceDetail() {
         setPayments(res.payments || []);
       }
     } catch (err) {
-      // Fallback demo invoice
-      setInvoice({
-        invoice_id: Number(id),
-        period_start: '2026-10-01',
-        period_end: '2026-10-31',
-        subtotal: 182.20,
-        tax: 18.22,
-        credit_applied: 20.00,
-        total: 180.42,
-        status: 'issued',
-        due_date: '2026-11-15',
-        issued_at: '2026-11-01'
-      });
-      setItems([
-        { item_id: 1, description: 'Compute: prod-web-01 (c1.medium, 730 hours)', quantity: 730, unit_price: 0.048, amount: 35.04 },
-        { item_id: 2, description: 'Compute: prod-db-primary (m1.large, 730 hours)', quantity: 730, unit_price: 0.120, amount: 87.60 },
-        { item_id: 3, description: 'Storage: High-Speed NVMe SSD (350 GB-month)', quantity: 350, unit_price: 0.100, amount: 35.00 },
-        { item_id: 4, description: 'Network: Public IPv4 Allocation (2 addresses)', quantity: 2, unit_price: 3.500, amount: 7.00 },
-        { item_id: 5, description: 'Network Egress Bandwidth (175.6 GB)', quantity: 175.6, unit_price: 0.100, amount: 17.56 }
-      ]);
+      setInvoice(null);
+      setItems([]);
       setPayments([]);
+      toast.error(err.msg || 'Could not load this invoice.');
     } finally {
       setLoading(false);
     }
@@ -66,7 +49,7 @@ export default function InvoiceDetail() {
       setActionLoading(true);
       const txnRef = `TXN-${Math.random().toString(36).substring(2, 10).toUpperCase()}`;
       await api.post(`/invoices/${id}/pay`, {
-        amount: Number(invoice.total),
+        amount: Number(invoice.balance ?? invoice.total),
         method: paymentMethod,
         txn_ref: txnRef
       });

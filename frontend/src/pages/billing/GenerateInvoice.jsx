@@ -38,22 +38,11 @@ export default function GenerateInvoice() {
       };
 
       const res = await api.post('/billing/generate', payload);
-      setGeneratedResult(res || {
-        invoices_generated: targetScope === 'all' ? 18 : 1,
-        total_billed: targetScope === 'all' ? 48920.00 : 180.42,
-        credits_applied: 420.00,
-        cycle: `${periodStart} to ${periodEnd}`
-      });
-      toast.success('Invoice generation procedure completed.');
-    } catch {
-      // Fallback response simulation
-      setGeneratedResult({
-        invoices_generated: targetScope === 'all' ? 18 : 1,
-        total_billed: targetScope === 'all' ? 48920.00 : 180.42,
-        credits_applied: 420.00,
-        cycle: `${periodStart} to ${periodEnd}`
-      });
-      toast.success('Invoices generated.');
+      setGeneratedResult(res);
+      toast.success('Invoice generation completed.');
+    } catch (err) {
+      setGeneratedResult(null);
+      toast.error(err.msg || 'Invoice generation failed.');
     } finally {
       setRunning(false);
     }
@@ -153,4 +142,3 @@ export default function GenerateInvoice() {
     </div>
   );
 }
-

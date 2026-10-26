@@ -24,9 +24,12 @@ BEGIN
   DECLARE v_free_disk INT;
 
   -- 1. Check organization status
+  -- FOR UPDATE locks the organization row, so two launches for the same organization
+  -- are serialized and cannot both pass the quota check below (check-then-insert race).
   SELECT status INTO v_org_status
   FROM organizations
-  WHERE org_id = NEW.org_id;
+  WHERE org_id = NEW.org_id
+  FOR UPDATE;
 
   IF v_org_status IS NULL OR v_org_status <> 'active' THEN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Organization is not active';
@@ -93,6 +96,35 @@ BEGIN
   VALUES ('instances', NEW.instance_id, 'INSERT',
           JSON_OBJECT('org_id', NEW.org_id, 'name', NEW.name, 'type_id', NEW.type_id, 'host_id', NEW.host_id, 'status', NEW.status),
           COALESCE(@app_user_id, 0));
+END$$
+
+-- Keep instance_type_history in step with instances.type_id (the history is what usage is priced with)
+DROP TRIGGER IF EXISTS trg_instances_ai_type_history$$
+CREATE TRIGGER trg_instances_ai_type_history AFTER INSERT ON instances FOR EACH ROW
+BEGIN
+  INSERT INTO instance_type_history(instance_id, valid_from, type_id)
+  VALUES (NEW.instance_id, '2000-01-01 00:00:00.000000', NEW.type_id);
+END$$
+
+DROP TRIGGER IF EXISTS trg_instances_au_type_history$$
+CREATE TRIGGER trg_instances_au_type_history AFTER UPDATE ON instances FOR EACH ROW
+BEGIN
+  IF NEW.type_id <> OLD.type_id THEN
+    INSERT INTO instance_type_history(instance_id, valid_from, type_id)
+    VALUES (NEW.instance_id, NOW(6), NEW.type_id);
+  END IF;
+END$$
+
+DROP TRIGGER IF EXISTS trg_ith_bu_block$$
+CREATE TRIGGER trg_ith_bu_block BEFORE UPDATE ON instance_type_history FOR EACH ROW
+BEGIN
+  SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Instance type history is append-only';
+END$$
+
+DROP TRIGGER IF EXISTS trg_ith_bd_block$$
+CREATE TRIGGER trg_ith_bd_block BEFORE DELETE ON instance_type_history FOR EACH ROW
+BEGIN
+  SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Instance type history is append-only';
 END$$
 
 DROP TRIGGER IF EXISTS trg_instances_bu_rules$$
@@ -330,9 +362,8 @@ BEGIN
   -- Amounts frozen once status is no longer 'draft'
   IF OLD.status <> 'draft' AND (
      OLD.subtotal <> NEW.subtotal
-     OR OLD.tax <> NEW.tax
+     OR OLD.tax_rate_pct <> NEW.tax_rate_pct
      OR OLD.credit_applied <> NEW.credit_applied
-     OR OLD.total <> NEW.total
   ) THEN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Invoice amounts are frozen once issued';
   END IF;
@@ -362,18 +393,22 @@ CREATE TRIGGER trg_invoices_ai_audit AFTER INSERT ON invoices FOR EACH ROW
 BEGIN
   INSERT INTO audit_log(table_name, record_id, action, new_data, changed_by)
   VALUES ('invoices', NEW.invoice_id, 'INSERT',
-          JSON_OBJECT('org_id', NEW.org_id, 'period_start', NEW.period_start, 'period_end', NEW.period_end, 'total', NEW.total, 'status', NEW.status),
+          JSON_OBJECT('org_id', NEW.org_id, 'period_start', NEW.period_start, 'period_end', NEW.period_end,
+                      'total', NEW.subtotal + ROUND(NEW.subtotal * NEW.tax_rate_pct / 100, 2) - NEW.credit_applied, 'status', NEW.status),
           COALESCE(@app_user_id, 0));
 END$$
 
 DROP TRIGGER IF EXISTS trg_invoices_au_audit$$
 CREATE TRIGGER trg_invoices_au_audit AFTER UPDATE ON invoices FOR EACH ROW
 BEGIN
-  IF OLD.status <> NEW.status OR OLD.total <> NEW.total THEN
+  IF OLD.status <> NEW.status
+     OR OLD.subtotal <> NEW.subtotal OR OLD.tax_rate_pct <> NEW.tax_rate_pct OR OLD.credit_applied <> NEW.credit_applied THEN
     INSERT INTO audit_log(table_name, record_id, action, old_data, new_data, changed_by)
     VALUES ('invoices', NEW.invoice_id, 'UPDATE',
-            JSON_OBJECT('status', OLD.status, 'total', OLD.total),
-            JSON_OBJECT('status', NEW.status, 'total', NEW.total),
+            JSON_OBJECT('status', OLD.status,
+                        'total', OLD.subtotal + ROUND(OLD.subtotal * OLD.tax_rate_pct / 100, 2) - OLD.credit_applied),
+            JSON_OBJECT('status', NEW.status,
+                        'total', NEW.subtotal + ROUND(NEW.subtotal * NEW.tax_rate_pct / 100, 2) - NEW.credit_applied),
             COALESCE(@app_user_id, 0));
   END IF;
 END$$
@@ -764,13 +799,242 @@ BEGIN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Cannot record usage for a terminated instance';
   END IF;
 
-  IF NEW.org_id <> v_org THEN
-    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Usage record org_id does not match instance org_id';
+END$$
+
+
+-- ============================================================
+-- 20. INTEGRITY RULES ADDED AFTER REVIEW
+-- ============================================================
+
+-- usage_records is billing evidence: append-only (partition drops by the retention job are DDL and still work)
+DROP TRIGGER IF EXISTS trg_usage_bu_block$$
+CREATE TRIGGER trg_usage_bu_block BEFORE UPDATE ON usage_records FOR EACH ROW
+BEGIN
+  SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Usage records are append-only and cannot be updated';
+END$$
+
+DROP TRIGGER IF EXISTS trg_usage_bd_block$$
+CREATE TRIGGER trg_usage_bd_block BEFORE DELETE ON usage_records FOR EACH ROW
+BEGIN
+  SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Usage records are append-only and cannot be deleted';
+END$$
+
+-- invoice_items can only change while the parent invoice is still a draft
+DROP TRIGGER IF EXISTS trg_invoice_items_bi_rules$$
+CREATE TRIGGER trg_invoice_items_bi_rules BEFORE INSERT ON invoice_items FOR EACH ROW
+BEGIN
+  DECLARE v_status VARCHAR(20) DEFAULT NULL;
+  SELECT status INTO v_status FROM invoices WHERE invoice_id = NEW.invoice_id;
+  IF v_status IS NULL THEN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Invoice not found';
+  END IF;
+  IF v_status <> 'draft' THEN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Line items can only be changed while the invoice is a draft';
+  END IF;
+END$$
+
+DROP TRIGGER IF EXISTS trg_invoice_items_bu_rules$$
+CREATE TRIGGER trg_invoice_items_bu_rules BEFORE UPDATE ON invoice_items FOR EACH ROW
+BEGIN
+  DECLARE v_status VARCHAR(20) DEFAULT NULL;
+  SELECT status INTO v_status FROM invoices WHERE invoice_id = OLD.invoice_id;
+  IF v_status IS NULL OR v_status <> 'draft' OR NEW.invoice_id <> OLD.invoice_id THEN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Line items can only be changed while the invoice is a draft';
+  END IF;
+END$$
+
+DROP TRIGGER IF EXISTS trg_invoice_items_bd_rules$$
+CREATE TRIGGER trg_invoice_items_bd_rules BEFORE DELETE ON invoice_items FOR EACH ROW
+BEGIN
+  DECLARE v_status VARCHAR(20) DEFAULT NULL;
+  SELECT status INTO v_status FROM invoices WHERE invoice_id = OLD.invoice_id;
+  IF v_status IS NULL OR v_status <> 'draft' THEN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Line items can only be changed while the invoice is a draft';
+  END IF;
+END$$
+
+-- tickets: creator must belong to the organization, only support staff can be assignees, closed is final
+DROP TRIGGER IF EXISTS trg_tickets_bi_rules$$
+CREATE TRIGGER trg_tickets_bi_rules BEFORE INSERT ON tickets FOR EACH ROW
+BEGIN
+  DECLARE v_role VARCHAR(20) DEFAULT NULL;
+  DECLARE v_member INT DEFAULT 0;
+  DECLARE v_assignee_role VARCHAR(20) DEFAULT NULL;
+
+  SELECT system_role INTO v_role FROM users WHERE user_id = NEW.created_by;
+  IF v_role = 'customer' THEN
+    SELECT COUNT(*) INTO v_member FROM org_members WHERE org_id = NEW.org_id AND user_id = NEW.created_by;
+    IF v_member = 0 THEN
+      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Ticket creator must be a member of the organization';
+    END IF;
   END IF;
 
-  IF NEW.type_id <> v_type THEN
-    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Usage record type_id does not match current instance type_id';
+  IF NEW.assigned_to IS NOT NULL THEN
+    SELECT system_role INTO v_assignee_role FROM users WHERE user_id = NEW.assigned_to;
+    IF v_assignee_role IS NULL OR v_assignee_role NOT IN ('support', 'super_admin') THEN
+      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Tickets can only be assigned to support staff';
+    END IF;
   END IF;
+END$$
+
+DROP TRIGGER IF EXISTS trg_tickets_bu_rules$$
+CREATE TRIGGER trg_tickets_bu_rules BEFORE UPDATE ON tickets FOR EACH ROW
+BEGIN
+  DECLARE v_assignee_role VARCHAR(20) DEFAULT NULL;
+
+  IF NEW.org_id <> OLD.org_id OR NEW.created_by <> OLD.created_by THEN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Ticket organization and creator cannot be changed';
+  END IF;
+
+  IF OLD.status = 'closed' AND NEW.status <> 'closed' THEN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'A closed ticket cannot be reopened';
+  END IF;
+
+  IF NOT (NEW.assigned_to <=> OLD.assigned_to) AND NEW.assigned_to IS NOT NULL THEN
+    SELECT system_role INTO v_assignee_role FROM users WHERE user_id = NEW.assigned_to;
+    IF v_assignee_role IS NULL OR v_assignee_role NOT IN ('support', 'super_admin') THEN
+      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Tickets can only be assigned to support staff';
+    END IF;
+  END IF;
+END$$
+
+DROP TRIGGER IF EXISTS trg_ticket_messages_bi_rules$$
+CREATE TRIGGER trg_ticket_messages_bi_rules BEFORE INSERT ON ticket_messages FOR EACH ROW
+BEGIN
+  DECLARE v_org INT DEFAULT NULL;
+  DECLARE v_role VARCHAR(20) DEFAULT NULL;
+  DECLARE v_member INT DEFAULT 0;
+
+  SELECT org_id INTO v_org FROM tickets WHERE ticket_id = NEW.ticket_id;
+  SELECT system_role INTO v_role FROM users WHERE user_id = NEW.sender_id;
+
+  IF v_role = 'customer' THEN
+    SELECT COUNT(*) INTO v_member FROM org_members WHERE org_id = v_org AND user_id = NEW.sender_id;
+    IF v_member = 0 THEN
+      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Sender is not allowed to post on this ticket';
+    END IF;
+  END IF;
+END$$
+
+-- Audit trails for catalog and support tables that had none
+
+DROP TRIGGER IF EXISTS trg_account_tiers_ai_audit$$
+CREATE TRIGGER trg_account_tiers_ai_audit AFTER INSERT ON account_tiers FOR EACH ROW
+BEGIN
+  INSERT INTO audit_log(table_name, record_id, action, new_data, changed_by)
+  VALUES ('account_tiers', NEW.tier_id, 'INSERT', JSON_OBJECT('name', NEW.name, 'max_instances', NEW.max_instances, 'max_storage_gb', NEW.max_storage_gb, 'discount_pct', NEW.discount_pct), COALESCE(@app_user_id, 0));
+END$$
+
+DROP TRIGGER IF EXISTS trg_account_tiers_au_audit$$
+CREATE TRIGGER trg_account_tiers_au_audit AFTER UPDATE ON account_tiers FOR EACH ROW
+BEGIN
+  INSERT INTO audit_log(table_name, record_id, action, old_data, new_data, changed_by)
+  VALUES ('account_tiers', NEW.tier_id, 'UPDATE', JSON_OBJECT('name', OLD.name, 'max_instances', OLD.max_instances, 'max_storage_gb', OLD.max_storage_gb, 'discount_pct', OLD.discount_pct), JSON_OBJECT('name', NEW.name, 'max_instances', NEW.max_instances, 'max_storage_gb', NEW.max_storage_gb, 'discount_pct', NEW.discount_pct), COALESCE(@app_user_id, 0));
+END$$
+
+DROP TRIGGER IF EXISTS trg_account_tiers_ad_audit$$
+CREATE TRIGGER trg_account_tiers_ad_audit AFTER DELETE ON account_tiers FOR EACH ROW
+BEGIN
+  INSERT INTO audit_log(table_name, record_id, action, old_data, changed_by)
+  VALUES ('account_tiers', OLD.tier_id, 'DELETE', JSON_OBJECT('name', OLD.name, 'max_instances', OLD.max_instances, 'max_storage_gb', OLD.max_storage_gb, 'discount_pct', OLD.discount_pct), COALESCE(@app_user_id, 0));
+END$$
+
+DROP TRIGGER IF EXISTS trg_regions_ai_audit$$
+CREATE TRIGGER trg_regions_ai_audit AFTER INSERT ON regions FOR EACH ROW
+BEGIN
+  INSERT INTO audit_log(table_name, record_id, action, new_data, changed_by)
+  VALUES ('regions', NEW.region_id, 'INSERT', JSON_OBJECT('code', NEW.code, 'name', NEW.name, 'country', NEW.country, 'status', NEW.status), COALESCE(@app_user_id, 0));
+END$$
+
+DROP TRIGGER IF EXISTS trg_regions_au_audit$$
+CREATE TRIGGER trg_regions_au_audit AFTER UPDATE ON regions FOR EACH ROW
+BEGIN
+  INSERT INTO audit_log(table_name, record_id, action, old_data, new_data, changed_by)
+  VALUES ('regions', NEW.region_id, 'UPDATE', JSON_OBJECT('code', OLD.code, 'name', OLD.name, 'country', OLD.country, 'status', OLD.status), JSON_OBJECT('code', NEW.code, 'name', NEW.name, 'country', NEW.country, 'status', NEW.status), COALESCE(@app_user_id, 0));
+END$$
+
+DROP TRIGGER IF EXISTS trg_regions_ad_audit$$
+CREATE TRIGGER trg_regions_ad_audit AFTER DELETE ON regions FOR EACH ROW
+BEGIN
+  INSERT INTO audit_log(table_name, record_id, action, old_data, changed_by)
+  VALUES ('regions', OLD.region_id, 'DELETE', JSON_OBJECT('code', OLD.code, 'name', OLD.name, 'country', OLD.country, 'status', OLD.status), COALESCE(@app_user_id, 0));
+END$$
+
+DROP TRIGGER IF EXISTS trg_instance_types_ai_audit$$
+CREATE TRIGGER trg_instance_types_ai_audit AFTER INSERT ON instance_types FOR EACH ROW
+BEGIN
+  INSERT INTO audit_log(table_name, record_id, action, new_data, changed_by)
+  VALUES ('instance_types', NEW.type_id, 'INSERT', JSON_OBJECT('name', NEW.name, 'family', NEW.family, 'vcpu', NEW.vcpu, 'ram_gb', NEW.ram_gb, 'disk_gb', NEW.disk_gb, 'active', NEW.active), COALESCE(@app_user_id, 0));
+END$$
+
+DROP TRIGGER IF EXISTS trg_instance_types_au_audit$$
+CREATE TRIGGER trg_instance_types_au_audit AFTER UPDATE ON instance_types FOR EACH ROW
+BEGIN
+  INSERT INTO audit_log(table_name, record_id, action, old_data, new_data, changed_by)
+  VALUES ('instance_types', NEW.type_id, 'UPDATE', JSON_OBJECT('name', OLD.name, 'family', OLD.family, 'vcpu', OLD.vcpu, 'ram_gb', OLD.ram_gb, 'disk_gb', OLD.disk_gb, 'active', OLD.active), JSON_OBJECT('name', NEW.name, 'family', NEW.family, 'vcpu', NEW.vcpu, 'ram_gb', NEW.ram_gb, 'disk_gb', NEW.disk_gb, 'active', NEW.active), COALESCE(@app_user_id, 0));
+END$$
+
+DROP TRIGGER IF EXISTS trg_instance_types_ad_audit$$
+CREATE TRIGGER trg_instance_types_ad_audit AFTER DELETE ON instance_types FOR EACH ROW
+BEGIN
+  INSERT INTO audit_log(table_name, record_id, action, old_data, changed_by)
+  VALUES ('instance_types', OLD.type_id, 'DELETE', JSON_OBJECT('name', OLD.name, 'family', OLD.family, 'vcpu', OLD.vcpu, 'ram_gb', OLD.ram_gb, 'disk_gb', OLD.disk_gb, 'active', OLD.active), COALESCE(@app_user_id, 0));
+END$$
+
+DROP TRIGGER IF EXISTS trg_operating_systems_ai_audit$$
+CREATE TRIGGER trg_operating_systems_ai_audit AFTER INSERT ON operating_systems FOR EACH ROW
+BEGIN
+  INSERT INTO audit_log(table_name, record_id, action, new_data, changed_by)
+  VALUES ('operating_systems', NEW.os_id, 'INSERT', JSON_OBJECT('name', NEW.name, 'os_family', NEW.os_family), COALESCE(@app_user_id, 0));
+END$$
+
+DROP TRIGGER IF EXISTS trg_operating_systems_au_audit$$
+CREATE TRIGGER trg_operating_systems_au_audit AFTER UPDATE ON operating_systems FOR EACH ROW
+BEGIN
+  INSERT INTO audit_log(table_name, record_id, action, old_data, new_data, changed_by)
+  VALUES ('operating_systems', NEW.os_id, 'UPDATE', JSON_OBJECT('name', OLD.name, 'os_family', OLD.os_family), JSON_OBJECT('name', NEW.name, 'os_family', NEW.os_family), COALESCE(@app_user_id, 0));
+END$$
+
+DROP TRIGGER IF EXISTS trg_operating_systems_ad_audit$$
+CREATE TRIGGER trg_operating_systems_ad_audit AFTER DELETE ON operating_systems FOR EACH ROW
+BEGIN
+  INSERT INTO audit_log(table_name, record_id, action, old_data, changed_by)
+  VALUES ('operating_systems', OLD.os_id, 'DELETE', JSON_OBJECT('name', OLD.name, 'os_family', OLD.os_family), COALESCE(@app_user_id, 0));
+END$$
+
+DROP TRIGGER IF EXISTS trg_images_ai_audit$$
+CREATE TRIGGER trg_images_ai_audit AFTER INSERT ON images FOR EACH ROW
+BEGIN
+  INSERT INTO audit_log(table_name, record_id, action, new_data, changed_by)
+  VALUES ('images', NEW.image_id, 'INSERT', JSON_OBJECT('os_id', NEW.os_id, 'version', NEW.version, 'min_disk_gb', NEW.min_disk_gb), COALESCE(@app_user_id, 0));
+END$$
+
+DROP TRIGGER IF EXISTS trg_images_au_audit$$
+CREATE TRIGGER trg_images_au_audit AFTER UPDATE ON images FOR EACH ROW
+BEGIN
+  INSERT INTO audit_log(table_name, record_id, action, old_data, new_data, changed_by)
+  VALUES ('images', NEW.image_id, 'UPDATE', JSON_OBJECT('os_id', OLD.os_id, 'version', OLD.version, 'min_disk_gb', OLD.min_disk_gb), JSON_OBJECT('os_id', NEW.os_id, 'version', NEW.version, 'min_disk_gb', NEW.min_disk_gb), COALESCE(@app_user_id, 0));
+END$$
+
+DROP TRIGGER IF EXISTS trg_images_ad_audit$$
+CREATE TRIGGER trg_images_ad_audit AFTER DELETE ON images FOR EACH ROW
+BEGIN
+  INSERT INTO audit_log(table_name, record_id, action, old_data, changed_by)
+  VALUES ('images', OLD.image_id, 'DELETE', JSON_OBJECT('os_id', OLD.os_id, 'version', OLD.version, 'min_disk_gb', OLD.min_disk_gb), COALESCE(@app_user_id, 0));
+END$$
+
+DROP TRIGGER IF EXISTS trg_tickets_ai_audit$$
+CREATE TRIGGER trg_tickets_ai_audit AFTER INSERT ON tickets FOR EACH ROW
+BEGIN
+  INSERT INTO audit_log(table_name, record_id, action, new_data, changed_by)
+  VALUES ('tickets', NEW.ticket_id, 'INSERT', JSON_OBJECT('org_id', NEW.org_id, 'created_by', NEW.created_by, 'assigned_to', NEW.assigned_to, 'subject', NEW.subject, 'priority', NEW.priority, 'status', NEW.status), COALESCE(@app_user_id, 0));
+END$$
+
+DROP TRIGGER IF EXISTS trg_tickets_au_audit$$
+CREATE TRIGGER trg_tickets_au_audit AFTER UPDATE ON tickets FOR EACH ROW
+BEGIN
+  INSERT INTO audit_log(table_name, record_id, action, old_data, new_data, changed_by)
+  VALUES ('tickets', NEW.ticket_id, 'UPDATE', JSON_OBJECT('org_id', OLD.org_id, 'created_by', OLD.created_by, 'assigned_to', OLD.assigned_to, 'subject', OLD.subject, 'priority', OLD.priority, 'status', OLD.status), JSON_OBJECT('org_id', NEW.org_id, 'created_by', NEW.created_by, 'assigned_to', NEW.assigned_to, 'subject', NEW.subject, 'priority', NEW.priority, 'status', NEW.status), COALESCE(@app_user_id, 0));
 END$$
 
 DELIMITER ;

@@ -9,6 +9,7 @@ import { FileText, Eye, Filter, ArrowRight } from 'lucide-react';
 export default function AuditLog() {
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
   const [tableFilter, setTableFilter] = useState('all');
   const [actionFilter, setActionFilter] = useState('all');
   const [selectedLog, setSelectedLog] = useState(null);
@@ -18,50 +19,11 @@ export default function AuditLog() {
       setLoading(true);
       const data = await api.get('/infra/audit');
 
-      const fallback = [
-        {
-          audit_id: 1042,
-          table_name: 'instances',
-          record_id: 101,
-          action: 'UPDATE',
-          old_data: { status: 'stopped', ip_address: '198.51.100.24' },
-          new_data: { status: 'running', ip_address: '198.51.100.24' },
-          changed_by_name: 'Alice Johnson',
-          changed_at: '2026-10-17 10:20:15'
-        },
-        {
-          audit_id: 1041,
-          table_name: 'volumes',
-          record_id: 1,
-          action: 'UPDATE',
-          old_data: { status: 'available', instance_id: null },
-          new_data: { status: 'attached', instance_id: 101 },
-          changed_by_name: 'Alice Johnson',
-          changed_at: '2026-10-17 09:45:00'
-        },
-        {
-          audit_id: 1040,
-          table_name: 'pricing',
-          record_id: 2,
-          action: 'INSERT',
-          old_data: null,
-          new_data: { type_id: 2, price_per_hour: 0.0480, valid_from: '2026-01-01' },
-          changed_by_name: 'Super Admin',
-          changed_at: '2026-10-16 14:10:00'
-        },
-        {
-          audit_id: 1039,
-          table_name: 'instances',
-          record_id: 99,
-          action: 'DELETE',
-          old_data: { instance_id: 99, name: 'temp-build-node', status: 'terminated' },
-          new_data: null,
-          changed_by_name: 'Super Admin',
-          changed_at: '2026-10-15 16:30:22'
-        }
-      ];
-
-      setLogs(Array.isArray(data) && data.length ? data : fallback);
+      setLogs(Array.isArray(data) ? data : []);
+      setLoadError(null);
+    } catch (err) {
+      setLogs([]);
+      setLoadError({ msg: 'Could not load the audit log.', hint: err.msg });
     } finally {
       setLoading(false);
     }
@@ -79,6 +41,7 @@ export default function AuditLog() {
 
   return (
     <div>
+      {loadError && <Banner tone="danger" message={loadError.msg} hint={loadError.hint} />}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
         <div>
           <h1>System Audit Trail</h1>

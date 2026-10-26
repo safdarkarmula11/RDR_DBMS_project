@@ -63,36 +63,22 @@ export default function LaunchWizard() {
 
         if (!mounted) return;
 
-        // Fallback demo catalog if backend endpoints are empty
-        const fallbackRegions = [
-          { region_id: 1, code: 'us-east-1', name: 'US-East (N. Virginia)', country: 'United States', active_hosts: 4, capacity: 'plenty' },
-          { region_id: 2, code: 'eu-west-1', name: 'EU-West (Frankfurt)', country: 'Germany', active_hosts: 3, capacity: 'plenty' },
-          { region_id: 3, code: 'ap-south-1', name: 'AP-South (Mumbai)', country: 'India', active_hosts: 2, capacity: 'limited' },
-          { region_id: 4, code: 'sa-east-1', name: 'SA-East (São Paulo)', country: 'Brazil', active_hosts: 1, capacity: 'full' },
-        ];
+        const failed = [regRes, typesRes, imgRes].find((r) => r.status === 'rejected');
+        const asList = (r) => (r.status === 'fulfilled' && Array.isArray(r.value) ? r.value : []);
 
-        const fallbackTypes = [
-          { type_id: 1, name: 't1.small', family: 'general', vcpu: 1, ram_gb: 2, disk_gb: 20, price_per_hour: 0.024 },
-          { type_id: 2, name: 'c1.medium', family: 'compute', vcpu: 2, ram_gb: 4, disk_gb: 40, price_per_hour: 0.048 },
-          { type_id: 3, name: 'm1.large', family: 'memory', vcpu: 4, ram_gb: 16, disk_gb: 80, price_per_hour: 0.120 },
-          { type_id: 4, name: 'c1.xlarge', family: 'compute', vcpu: 8, ram_gb: 16, disk_gb: 160, price_per_hour: 0.192 },
-        ];
-
-        const fallbackImages = [
-          { image_id: 1, name: 'Ubuntu Server', version: '24.04 LTS', os_family: 'linux', min_disk_gb: 10 },
-          { image_id: 2, name: 'Debian', version: '12 Bookworm', os_family: 'linux', min_disk_gb: 10 },
-          { image_id: 3, name: 'Rocky Linux', version: '9.4', os_family: 'linux', min_disk_gb: 15 },
-          { image_id: 4, name: 'Windows Server', version: '2022 Datacenter', os_family: 'windows', min_disk_gb: 30 },
-          { image_id: 5, name: 'FreeBSD', version: '14.0 Release', os_family: 'bsd', min_disk_gb: 10 },
-        ];
-
-        const regData = regRes.status === 'fulfilled' && Array.isArray(regRes.value) && regRes.value.length ? regRes.value.map((r, i) => ({
+        // Capacity label is derived from the number of active hosts in the region
+        const regData = asList(regRes).map((r) => ({
           ...r,
-          capacity: i === 3 ? 'full' : i === 2 ? 'limited' : 'plenty'
-        })) : fallbackRegions;
+          capacity: Number(r.active_hosts) === 0 ? 'full' : Number(r.active_hosts) === 1 ? 'limited' : 'plenty',
+        }));
+        const typesData = asList(typesRes);
+        const imgData = asList(imgRes);
 
-        const typesData = typesRes.status === 'fulfilled' && Array.isArray(typesRes.value) && typesRes.value.length ? typesRes.value : fallbackTypes;
-        const imgData = imgRes.status === 'fulfilled' && Array.isArray(imgRes.value) && imgRes.value.length ? imgRes.value : fallbackImages;
+        if (failed) {
+          setErrorBanner({ msg: 'Could not load the launch catalog.', hint: failed.reason?.msg || 'Check that the backend is running.' });
+        } else if (!regData.length || !typesData.length || !imgData.length) {
+          setErrorBanner({ msg: 'The launch catalog is empty.', hint: 'Load the reference data (database/07_seed.sql) with npm run db:setup.' });
+        }
 
         setRegions(regData);
         setInstanceTypes(typesData);
@@ -549,4 +535,3 @@ export default function LaunchWizard() {
     </div>
   );
 }
-
