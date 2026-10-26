@@ -23,7 +23,8 @@ import {
   Inbox,
   UserCheck,
   Building2,
-  AlertOctagon
+  AlertOctagon,
+  Database
 } from 'lucide-react';
 
 export const NAV = {
@@ -41,6 +42,7 @@ export const NAV = {
   super_admin: [
     { to: '/admin/capacity', label: 'Capacity', icon: Cpu },
     { to: '/admin/hosts', label: 'Hosts & Regions', icon: Server },
+    { to: '/admin/er-diagram', label: 'ER Diagram', icon: Database },
     { to: '/admin/pricing', label: 'Pricing Editor', icon: Tag },
     { to: '/admin/audit', label: 'Audit Log', icon: FileText },
     { to: '/admin/consistency', label: 'Consistency', icon: CheckSquare },

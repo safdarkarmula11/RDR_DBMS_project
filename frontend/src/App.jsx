@@ -23,6 +23,7 @@ import Team from './pages/Team';
 // Admin pages
 import Capacity from './pages/admin/Capacity';
 import Hosts from './pages/admin/Hosts';
+import ERDiagram from './pages/admin/ERDiagram';
 import Pricing from './pages/admin/Pricing';
 import AuditLog from './pages/admin/AuditLog';
 import Consistency from './pages/admin/Consistency';
@@ -206,6 +207,14 @@ export default function App() {
           element={
             <RequireRole allow={['super_admin']}>
               <Hosts />
+            </RequireRole>
+          }
+        />
+        <Route
+          path="/admin/er-diagram"
+          element={
+            <RequireRole allow={['super_admin']}>
+              <ERDiagram />
             </RequireRole>
           }
         />

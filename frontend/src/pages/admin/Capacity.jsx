@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { api } from '../../api';
 import Button from '../../ui/Button';
 import StatusBadge from '../../ui/StatusBadge';
@@ -6,7 +7,7 @@ import DataTable from '../../ui/DataTable';
 import Skeleton from '../../ui/Skeleton';
 import Banner from '../../ui/Banner';
 import CountUp from '../../ui/CountUp';
-import { Cpu, HardDrive, Server, RefreshCw, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { Cpu, HardDrive, Server, RefreshCw, AlertTriangle, CheckCircle2, Database } from 'lucide-react';
 
 export default function Capacity() {
   const [regions, setRegions] = useState([]);
@@ -77,15 +78,22 @@ export default function Capacity() {
           </p>
         </div>
 
-        <Button
-          variant="secondary"
-          size="sm"
-          icon={RefreshCw}
-          loading={isRefreshing}
-          onClick={() => fetchCapacity(false)}
-        >
-          Refresh Cluster Telemetry
-        </Button>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          <Link to="/admin/er-diagram" style={{ textDecoration: 'none' }}>
+            <Button variant="secondary" size="sm" icon={Database}>
+              View ER Diagram
+            </Button>
+          </Link>
+          <Button
+            variant="secondary"
+            size="sm"
+            icon={RefreshCw}
+            loading={isRefreshing}
+            onClick={() => fetchCapacity(false)}
+          >
+            Refresh Cluster Telemetry
+          </Button>
+        </div>
       </div>
 
       {bannerError && <Banner tone="danger" message={bannerError.msg} hint={bannerError.hint} />}

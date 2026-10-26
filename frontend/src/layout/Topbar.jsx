@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
-import { Search, Moon, Sun, Bell, User, Check, Building, Shield, ChevronDown } from 'lucide-react';
+import { Search, Moon, Sun, Bell, User, Check, Building, Shield, ChevronDown, Database } from 'lucide-react';
 import Button from '../ui/Button';
 
 export default function Topbar() {
@@ -83,6 +84,32 @@ export default function Topbar() {
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        {/* Super Admin Quick ER Diagram button */}
+        {user?.role === 'super_admin' && (
+          <Link
+            to="/admin/er-diagram"
+            className="btn btn--secondary btn--sm"
+            style={{
+              textDecoration: 'none',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              fontWeight: 600,
+              fontSize: 12,
+              padding: '6px 14px',
+              borderRadius: 'var(--radius-full)',
+              color: 'var(--brand)',
+              borderColor: 'var(--brand-ring, var(--line))',
+              background: 'rgba(30, 96, 242, 0.08)',
+              transition: 'all 0.2s var(--ease-out)'
+            }}
+            title="Inspect Database Schema & Interactive ER Diagram"
+          >
+            <Database size={14} color="var(--brand)" />
+            <span>ER Diagram</span>
+          </Link>
+        )}
+
         {/* Organization / Tenant badge */}
         {user?.org_name && (
           <div

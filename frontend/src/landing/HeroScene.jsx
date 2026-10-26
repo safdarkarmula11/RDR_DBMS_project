@@ -2,7 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { INTRO_CONFIG } from './introConfig';
-import { Activity, ArrowRight, ShieldCheck, Zap } from 'lucide-react';
+import { Activity, ArrowRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 gsap.registerPlugin(ScrollTrigger);
@@ -11,12 +11,14 @@ export default function HeroScene() {
   const trackRef = useRef(null);
   const viewportRef = useRef(null);
   const headlineRef = useRef(null);
-  const collageRef = useRef(null);
-  const centerMonolithRef = useRef(null);
-  const panelTopRightRef = useRef(null);
-  const panelTopLeftRef = useRef(null);
-  const panelBottomRightRef = useRef(null);
-  const panelBottomLeftRef = useRef(null);
+
+  // 6 Non-overlapping Collage Cards taking entire screen perimeter
+  const cardTlRef = useRef(null);
+  const cardTrRef = useRef(null);
+  const cardMlRef = useRef(null);
+  const cardMrRef = useRef(null);
+  const cardBlRef = useRef(null);
+  const cardBrRef = useRef(null);
 
   useEffect(() => {
     const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -28,27 +30,27 @@ export default function HeroScene() {
       introTl
         .fromTo(
           headlineRef.current,
-          { opacity: 0, y: 30, scale: 0.98 },
-          { opacity: 1, y: 0, scale: 1, duration: 1.0, delay: 0.15 }
+          { opacity: 0, y: 25, scale: 0.98 },
+          { opacity: 1, y: 0, scale: 1, duration: 0.9, delay: 0.1 }
         )
         .fromTo(
-          centerMonolithRef.current,
-          { opacity: 0, scale: 0.85 },
-          { opacity: 1, scale: 1, duration: 1.2, ease: 'back.out(1.3)' },
-          '-=0.7'
-        )
-        .fromTo(
-          [panelTopRightRef.current, panelTopLeftRef.current, panelBottomRightRef.current, panelBottomLeftRef.current],
-          { opacity: 0, scale: 0.75, y: 20 },
-          { opacity: 1, scale: 1, y: 0, duration: 1.0, stagger: 0.08, ease: 'power2.out' },
-          '-=0.8'
+          [
+            cardTlRef.current,
+            cardTrRef.current,
+            cardMlRef.current,
+            cardMrRef.current,
+            cardBlRef.current,
+            cardBrRef.current,
+          ],
+          { opacity: 0, scale: 0.88, y: 20 },
+          { opacity: 1, scale: 1, y: 0, duration: 0.85, stagger: 0.08, ease: 'back.out(1.2)' },
+          '-=0.6'
         );
 
       if (prefersReducedMotion) return;
 
-      // 2. SCROLL-DRIVEN ZOOM-IN SCRUB TIMELINE
-      // As the user scrolls, the camera zooms into the background collage!
-      // The central monolith dives in while surrounding collage panels drift outward.
+      // 2. SCROLL-DRIVEN PARALLAX (FULL SCREEN COLLAGE)
+      // As the user scrolls, headline fades and perimeter cards drift smoothly in 3D perspective
       const scrubTl = gsap.timeline({
         scrollTrigger: {
           trigger: trackRef.current,
@@ -60,94 +62,64 @@ export default function HeroScene() {
         },
       });
 
-      // Phase 1: Headline fades up & out early so the visual takes full center stage
+      // Headline fades out gently as the user scrolls
       scrubTl.to(
         headlineRef.current,
         {
           opacity: 0,
-          y: -50,
-          scale: 0.95,
-          duration: 1.2,
+          y: -40,
+          scale: 0.96,
+          duration: 1.0,
           ease: 'power2.in',
         },
         0
       );
 
-      // Phase 2: Central Monolith ZOOMS IN towards the viewer (Camera dive into core)
+      // Top cards drift upward
       scrubTl.to(
-        centerMonolithRef.current,
+        [cardTlRef.current, cardTrRef.current],
         {
-          scale: 2.8,
-          y: 30,
-          duration: 3.5,
-          ease: 'power1.inOut',
-        },
-        0.2
-      );
-
-      // Phase 3: Surrounding collage panels expand outwards in 3D perspective
-      scrubTl.to(
-        panelTopRightRef.current,
-        {
-          x: 180,
-          y: -120,
-          scale: 1.35,
-          opacity: 0.35,
-          duration: 3.2,
-          ease: 'power1.inOut',
-        },
-        0.3
-      );
-
-      scrubTl.to(
-        panelTopLeftRef.current,
-        {
-          x: -180,
-          y: -110,
-          scale: 1.3,
-          opacity: 0.35,
-          duration: 3.2,
-          ease: 'power1.inOut',
-        },
-        0.3
-      );
-
-      scrubTl.to(
-        panelBottomRightRef.current,
-        {
-          x: 160,
-          y: 120,
-          scale: 1.25,
-          opacity: 0.3,
-          duration: 3.2,
-          ease: 'power1.inOut',
-        },
-        0.4
-      );
-
-      scrubTl.to(
-        panelBottomLeftRef.current,
-        {
-          x: -160,
-          y: 110,
-          scale: 1.25,
-          opacity: 0.3,
-          duration: 3.2,
-          ease: 'power1.inOut',
-        },
-        0.4
-      );
-
-      // Phase 4: Final deep dive into the luminous core
-      scrubTl.to(
-        centerMonolithRef.current,
-        {
-          scale: 3.8,
-          opacity: 0.85,
-          duration: 1.5,
+          y: -50,
+          opacity: 0.25,
+          duration: 1.8,
           ease: 'power1.out',
         },
-        3.5
+        0.1
+      );
+
+      // Mid cards drift outward
+      scrubTl.to(
+        cardMlRef.current,
+        {
+          x: -30,
+          opacity: 0.25,
+          duration: 1.8,
+          ease: 'power1.out',
+        },
+        0.12
+      );
+
+      scrubTl.to(
+        cardMrRef.current,
+        {
+          x: 30,
+          opacity: 0.25,
+          duration: 1.8,
+          ease: 'power1.out',
+        },
+        0.12
+      );
+
+      // Bottom cards drift downward
+      scrubTl.to(
+        [cardBlRef.current, cardBrRef.current],
+        {
+          y: 50,
+          opacity: 0.25,
+          duration: 1.8,
+          ease: 'power1.out',
+        },
+        0.15
       );
     }, trackRef);
 
@@ -155,18 +127,128 @@ export default function HeroScene() {
   }, []);
 
   return (
-    <section ref={trackRef} className="hero-scroll-track" style={{ height: INTRO_CONFIG.hero.pinDistance || '350vh' }}>
+    <section
+      ref={trackRef}
+      className="hero-scroll-track"
+      style={{ height: INTRO_CONFIG.hero.pinDistance || '220vh' }}
+    >
       <div ref={viewportRef} className="hero-pinned-viewport">
-        {/* Scroll indicator prompt */}
-        <div className="hero-scroll-prompt" aria-hidden="true">
-          <span>Scroll to Zoom Into Cloud Architecture</span>
-          <div className="hero-scroll-mouse">
-            <div className="hero-scroll-wheel" />
+        {/* ── BACKGROUND COLLAGE (Takes Entire Screen, Zero Overlap) ── */}
+        <div className="hero-collage-container" aria-hidden="true">
+          {/* Subtle Ambient Radial Glow */}
+          <div className="collage-ambient-glow" />
+
+          {/* 1. Top-Left: Cloud Hosting Digital Server Technology */}
+          <div ref={cardTlRef} className="collage-card collage-card-tl">
+            <div className="collage-card-inner">
+              <div className="collage-card-header">
+                <span className="collage-dot" style={{ background: '#38BDF8' }} />
+                <span className="collage-label">Cloud Hosting Mesh</span>
+                <span className="collage-tag">vCPU</span>
+              </div>
+              <div className="collage-img-wrap">
+                <img
+                  src="/landing-cloud-hosting.png"
+                  alt="Cloud Hosting Digital Server Technology"
+                  className="collage-img"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* 2. Top-Right: Bare-Metal Hypervisors & Terminal */}
+          <div ref={cardTrRef} className="collage-card collage-card-tr">
+            <div className="collage-card-inner">
+              <div className="collage-card-header">
+                <span className="collage-dot" style={{ background: '#A855F7' }} />
+                <span className="collage-label">Bare-Metal Hypervisors</span>
+                <span className="collage-tag">Cluster</span>
+              </div>
+              <div className="collage-img-wrap">
+                <img
+                  src="/landing-server-purple.png"
+                  alt="Bare-Metal Hypervisors & Terminal"
+                  className="collage-img"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* 3. Mid-Left: Zero-Trust Security & Network Shield */}
+          <div ref={cardMlRef} className="collage-card collage-card-ml">
+            <div className="collage-card-inner">
+              <div className="collage-card-header">
+                <span className="collage-dot" style={{ background: '#06B6D4' }} />
+                <span className="collage-label">Zero-Trust Shield</span>
+                <span className="collage-tag">256-bit</span>
+              </div>
+              <div className="collage-img-wrap">
+                <img
+                  src="/landing-security-lock.png"
+                  alt="Zero-Trust Security & Network Shield"
+                  className="collage-img"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* 4. Mid-Right: Virtual Private Cloud (VPC) Topology */}
+          <div ref={cardMrRef} className="collage-card collage-card-mr">
+            <div className="collage-card-inner">
+              <div className="collage-card-header">
+                <span className="collage-dot" style={{ background: '#3B82F6' }} />
+                <span className="collage-label">Virtual Private Cloud</span>
+                <span className="collage-tag">VPC</span>
+              </div>
+              <div className="collage-img-wrap">
+                <img
+                  src="/landing-cloud-illustration.png"
+                  alt="Virtual Private Cloud"
+                  className="collage-img"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* 5. Bottom-Left: Autonomous Compute Engine */}
+          <div ref={cardBlRef} className="collage-card collage-card-bl">
+            <div className="collage-card-inner">
+              <div className="collage-card-header">
+                <span className="collage-dot" style={{ background: '#F59E0B' }} />
+                <span className="collage-label">Autonomous Compute Mesh</span>
+                <span className="collage-tag">Mesh</span>
+              </div>
+              <div className="collage-img-wrap collage-img-wrap-monolith">
+                <img
+                  src="/hero-monolith.png"
+                  alt="Autonomous Compute Mesh"
+                  className="collage-img collage-img-contain"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* 6. Bottom-Right: Multi-Tenant IAM & Teams */}
+          <div ref={cardBrRef} className="collage-card collage-card-br">
+            <div className="collage-card-inner">
+              <div className="collage-card-header">
+                <span className="collage-dot" style={{ background: '#10B981' }} />
+                <span className="collage-label">Multi-Tenant IAM</span>
+                <span className="collage-tag">RBAC</span>
+              </div>
+              <div className="collage-img-wrap">
+                <img
+                  src="/landing-team-illustration.png"
+                  alt="Multi-Tenant IAM & Teams"
+                  className="collage-img"
+                />
+              </div>
+            </div>
           </div>
         </div>
 
+        {/* Center Stage Headline (Elevated, Unobstructed, 100% Readable) */}
         <div className="hero-stage-container">
-          {/* Main Clean Headline (No clutter, fades smoothly on scroll) */}
           <div ref={headlineRef} className="hero-headline-wrap">
             <div className="hero-badge-pill">
               <Activity size={14} className="badge-pulse-icon" />
@@ -189,62 +271,13 @@ export default function HeroScene() {
               </Link>
             </div>
           </div>
+        </div>
 
-          {/* ── BACKGROUND COLLAGE (Unobstructed, Animated & Zooming in) ── */}
-          <div ref={collageRef} className="hero-collage-container" aria-hidden="true">
-            {/* Centerpiece: Primary 3D Sci-Fi Monolith */}
-            <div ref={centerMonolithRef} className="collage-item collage-centerpiece">
-              <div className="collage-monolith-glow" />
-              <img
-                src="/hero-monolith.png"
-                alt="Cloud Core Monolith"
-                className="collage-img collage-img-main"
-              />
-            </div>
-
-            {/* Top-Right Panel: Server Infrastructure */}
-            <div ref={panelTopRightRef} className="collage-item collage-panel-top-right">
-              <div className="collage-card-frame">
-                <img
-                  src="/landing-server-illustration.png"
-                  alt="Server Cluster"
-                  className="collage-img"
-                />
-              </div>
-            </div>
-
-            {/* Top-Left Panel: Cloud Fabric */}
-            <div ref={panelTopLeftRef} className="collage-item collage-panel-top-left">
-              <div className="collage-card-frame">
-                <img
-                  src="/landing-cloud-illustration.png"
-                  alt="Virtual Cloud Fabric"
-                  className="collage-img"
-                />
-              </div>
-            </div>
-
-            {/* Bottom-Right Panel: Operations & Teams */}
-            <div ref={panelBottomRightRef} className="collage-item collage-panel-bottom-right">
-              <div className="collage-card-frame">
-                <img
-                  src="/landing-team-illustration.png"
-                  alt="Multi-Tenant Teams"
-                  className="collage-img"
-                />
-              </div>
-            </div>
-
-            {/* Bottom-Left Panel: Satellite Monolith Angle */}
-            <div ref={panelBottomLeftRef} className="collage-item collage-panel-bottom-left">
-              <div className="collage-card-frame">
-                <img
-                  src="/hero-monolith.png"
-                  alt="Storage Fabric"
-                  className="collage-img collage-img-satellite"
-                />
-              </div>
-            </div>
+        {/* Scroll indicator prompt */}
+        <div className="hero-scroll-prompt" aria-hidden="true">
+          <span>Scroll to Explore Architecture</span>
+          <div className="hero-scroll-mouse">
+            <div className="hero-scroll-wheel" />
           </div>
         </div>
       </div>

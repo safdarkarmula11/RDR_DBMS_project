@@ -11,9 +11,9 @@ export const INTRO_CONFIG = {
     subtitle: 'Mounting virtualized cluster schema...',
   },
 
-  // Hero pinned scrub sequence (350vh for smooth, cinematic zoom-in through the collage)
+  // Hero pinned scrub sequence (220vh for smooth parallax collage drift)
   hero: {
-    pinDistance: '350vh',
+    pinDistance: '220vh',
     scrubSmoothness: 1.0,
   },
 
