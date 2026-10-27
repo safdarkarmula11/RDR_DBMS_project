@@ -57,7 +57,7 @@ export default function LandingPage() {
           <button
             type="button"
             onClick={toggleTheme}
-            className="landing-nav-link"
+            className="landing-nav-link nav-optional"
             style={{
               background: 'transparent',
               border: 'none',
@@ -77,7 +77,7 @@ export default function LandingPage() {
           <button
             type="button"
             onClick={handleReplayIntro}
-            className="landing-nav-link"
+            className="landing-nav-link nav-optional"
             style={{
               background: 'transparent',
               border: 'none',

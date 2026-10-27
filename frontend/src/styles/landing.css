@@ -835,52 +835,9 @@
   gap: 24px;
 }
 
-.landing-root,
-.landing-root * {
-  font-family: "Times New Roman", Times, serif !important;
-}
-
-.landing-root {
-  font-size: 18px;
-  line-height: 1.6;
-}
-
-.landing-brand-name { font-size: 21px; }
-.landing-brand-badge { font-size: 13px; }
-.landing-root .mono { font-size: 16px; }
-.landing-nav-link,
-.landing-cta-btn,
-.footer-replay-btn { font-size: 17px; }
-.preloader-counter { font-size: 17px; }
-.preloader-skip-btn { font-size: 16px; }
-.hero-scroll-prompt { font-size: 15px; }
-.hero-badge-pill { font-size: 16px; }
-.hero-title { font-size: clamp(36px, 5vw, 60px); line-height: 1.2; }
-.hero-subtitle { font-size: clamp(18px, 1.8vw, 21px); line-height: 1.6; }
-.stage-banner-tag,
-.scatter-item,
-.schema-table-title { font-size: 16px; }
-.schema-row { font-size: 15px; }
 .schema-row span {
   min-width: 0;
   overflow-wrap: anywhere;
-}
-.stat-label,
-.feature-tag,
-.feature-metric-label,
-.features-kicker { font-size: 15px; }
-.stat-value { font-size: 38px; }
-.stat-sub,
-.feature-pill-badge { font-size: 16px; }
-.features-heading { font-size: clamp(34px, 4.5vw, 50px); }
-.features-subheading,
-.feature-desc { font-size: 20px; line-height: 1.65; }
-.feature-title { font-size: clamp(30px, 3.2vw, 40px); line-height: 1.25; }
-.feature-metric-val { font-size: 24px; }
-.footer-text { font-size: 17px; }
-
-.landing-root [style*="font-size"] {
-  font-size: max(18px, 1.1em) !important;
 }
 
 .hero-pinned-viewport {
@@ -1124,5 +1081,28 @@
   }
   .pinned-card-stage {
     padding: 0 14px;
+  }
+}
+
+/* ==========================================================================
+   SMALL SCREENS: keep the hero clean (no overlapping HUD text or cards)
+   ========================================================================== */
+@media (max-width: 768px) {
+  .nav-optional,
+  .parallax-layer .mono,
+  .hero-scroll-prompt,
+  .collage-card-bl,
+  .collage-card-br {
+    display: none !important;
+  }
+}
+
+@media (max-width: 768px) {
+  .feature-graphic-panel [style*="space-between"] {
+    flex-wrap: wrap;
+    gap: 2px 12px;
+  }
+  .feature-graphic-panel .mono {
+    white-space: nowrap;
   }
 }

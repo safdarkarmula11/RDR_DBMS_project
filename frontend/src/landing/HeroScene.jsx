@@ -25,13 +25,17 @@ export default function HeroScene() {
 
     const ctx = gsap.context(() => {
       // 1. INITIAL MOUNT ENTRANCE ANIMATION
+      // The entrance animates the CHILDREN of the headline and the INNER box of each card. The scroll
+      // animation below animates the outer wrappers. Two timelines must never animate the same element:
+      // ScrollTrigger resets its own targets on every refresh, which used to wipe out the entrance and
+      // leave the headline and cards invisible.
       const introTl = gsap.timeline({ defaults: { ease: 'power2.out' } });
 
       introTl
         .fromTo(
-          headlineRef.current,
-          { opacity: 0, y: 25, scale: 0.98 },
-          { opacity: 1, y: 0, scale: 1, duration: 0.9, delay: 0.1 }
+          Array.from(headlineRef.current.children),
+          { opacity: 0, y: 25 },
+          { opacity: 1, y: 0, duration: 0.8, stagger: 0.1, delay: 0.1 }
         )
         .fromTo(
           [
@@ -41,7 +45,7 @@ export default function HeroScene() {
             cardMrRef.current,
             cardBlRef.current,
             cardBrRef.current,
-          ],
+          ].map((el) => el.firstElementChild),
           { opacity: 0, scale: 0.88, y: 20 },
           { opacity: 1, scale: 1, y: 0, duration: 0.85, stagger: 0.08, ease: 'back.out(1.2)' },
           '-=0.6'
@@ -63,9 +67,13 @@ export default function HeroScene() {
       });
 
       // Headline fades out gently as the user scrolls
-      scrubTl.to(
+      // fromTo with explicit start values + immediateRender:false: a plain .to() would read the
+      // headline's opacity (0) before the entrance animation runs and keep it hidden.
+      scrubTl.fromTo(
         headlineRef.current,
+        { opacity: 1, y: 0, scale: 1 },
         {
+          immediateRender: false,
           opacity: 0,
           y: -40,
           scale: 0.96,
@@ -76,9 +84,11 @@ export default function HeroScene() {
       );
 
       // Top cards drift upward
-      scrubTl.to(
+      scrubTl.fromTo(
         [cardTlRef.current, cardTrRef.current],
+        { y: 0, opacity: 1 },
         {
+          immediateRender: false,
           y: -50,
           opacity: 0.25,
           duration: 1.8,
@@ -88,9 +98,11 @@ export default function HeroScene() {
       );
 
       // Mid cards drift outward
-      scrubTl.to(
+      scrubTl.fromTo(
         cardMlRef.current,
+        { x: 0, opacity: 1 },
         {
+          immediateRender: false,
           x: -30,
           opacity: 0.25,
           duration: 1.8,
@@ -99,9 +111,11 @@ export default function HeroScene() {
         0.12
       );
 
-      scrubTl.to(
+      scrubTl.fromTo(
         cardMrRef.current,
+        { x: 0, opacity: 1 },
         {
+          immediateRender: false,
           x: 30,
           opacity: 0.25,
           duration: 1.8,
@@ -111,9 +125,11 @@ export default function HeroScene() {
       );
 
       // Bottom cards drift downward
-      scrubTl.to(
+      scrubTl.fromTo(
         [cardBlRef.current, cardBrRef.current],
+        { y: 0, opacity: 1 },
         {
+          immediateRender: false,
           y: 50,
           opacity: 0.25,
           duration: 1.8,
