@@ -124,34 +124,45 @@ export default function LandingPage() {
             </div>
           </Link>
 
-          <nav className="simple-nav-links">
-            <a href="#showcase" className="simple-nav-link">Showcase</a>
-            <a href="#features" className="simple-nav-link">Features</a>
-            <a href="#architecture" className="simple-nav-link">Architecture</a>
-            <a href="#specs" className="simple-nav-link">Pricing & Specs</a>
-          </nav>
+        <nav className="landing-nav-actions" aria-label="Main Navigation">
+          {/* Theme Toggle (Blue & White vs Blue & Black) */}
+          <button
+            type="button"
+            onClick={toggleTheme}
+            className="landing-nav-link nav-optional"
+            style={{
+              background: 'transparent',
+              border: 'none',
+              cursor: 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+            }}
+            title={`Switch to ${theme === 'light' ? 'Dark Mode (Blue & Black)' : 'Light Mode (Blue & White)'}`}
+            aria-label={`Switch to ${theme === 'light' ? 'dark' : 'light'} theme`}
+          >
+            {theme === 'light' ? <Moon size={15} /> : <Sun size={15} color="#38BDF8" />}
+            <span>{theme === 'light' ? 'Blue & Black' : 'Blue & White'}</span>
+          </button>
 
-          <div className="simple-nav-actions">
-            {/* Theme Toggle Button */}
-            <button
-              type="button"
-              onClick={toggleTheme}
-              className="simple-theme-btn"
-              title={`Switch to ${theme === 'light' ? 'Dark Mode (Blue & Black)' : 'Light Mode (Blue & White)'}`}
-              aria-label={`Switch to ${theme === 'light' ? 'dark' : 'light'} theme`}
-            >
-              {theme === 'light' ? (
-                <>
-                  <Moon size={15} />
-                  <span>Blue & Black</span>
-                </>
-              ) : (
-                <>
-                  <Sun size={15} color="#38BDF8" />
-                  <span>Blue & White</span>
-                </>
-              )}
-            </button>
+          {/* Replay Intro button */}
+          <button
+            type="button"
+            onClick={handleReplayIntro}
+            className="landing-nav-link nav-optional"
+            style={{
+              background: 'transparent',
+              border: 'none',
+              cursor: 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+            }}
+            title="Replay intro startup animation"
+          >
+            <RotateCcw size={14} />
+            <span>Replay Intro</span>
+          </button>
 
             {user ? (
               <Link to="/dashboard" className="btn btn--primary btn--sm">

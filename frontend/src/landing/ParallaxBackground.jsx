@@ -94,7 +94,7 @@ export default function ParallaxBackground() {
           style={{
             position: 'absolute',
             top: '25%',
-            left: '8%',
+            left: '16%',
             fontSize: '10px',
             color: 'rgba(59, 130, 246, 0.4)',
             letterSpacing: '1px',
@@ -107,7 +107,7 @@ export default function ParallaxBackground() {
           style={{
             position: 'absolute',
             top: '55%',
-            right: '10%',
+            right: '17%',
             fontSize: '10px',
             color: 'rgba(56, 189, 248, 0.4)',
             letterSpacing: '1px',
@@ -120,7 +120,7 @@ export default function ParallaxBackground() {
           style={{
             position: 'absolute',
             bottom: '20%',
-            left: '12%',
+            left: '19%',
             fontSize: '10px',
             color: 'rgba(16, 185, 129, 0.4)',
             letterSpacing: '1px',

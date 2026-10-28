@@ -470,6 +470,134 @@
   background: #0D1527;
   padding: 10px 14px;
   display: flex;
+<<<<<<< HEAD
+=======
+  gap: 24px;
+  border-top: 1px solid var(--line);
+  padding-top: 20px;
+}
+
+.feature-metric-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.feature-metric-label {
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+}
+
+.feature-metric-val {
+  font-family: var(--font-mono);
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--ok);
+}
+
+/* Feature Graphic Panel */
+.feature-graphic-panel {
+  background: var(--bg-alt);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+[data-theme='dark'] .feature-graphic-panel {
+  background: #050811;
+  border-color: rgba(59, 130, 246, 0.20);
+}
+
+/* ==========================================================================
+   LANDING FOOTER
+   ========================================================================== */
+.landing-footer {
+  position: relative;
+  z-index: 20;
+  border-top: 1px solid var(--line);
+  padding: 60px 36px 40px 36px;
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24px;
+}
+
+.schema-row span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.hero-pinned-viewport {
+  padding-top: 96px;
+  padding-bottom: 72px;
+}
+
+.hero-visual-stage {
+  height: min(48vh, 520px);
+  min-height: 300px;
+}
+
+.features-pinned-track {
+  padding-top: 112px;
+  padding-bottom: 96px;
+}
+
+.pinned-card-stage {
+  position: relative;
+  top: auto !important;
+  margin-bottom: 56px;
+}
+
+.pinned-card-box {
+  align-items: start;
+  gap: 48px;
+}
+
+.feature-graphic-panel {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.landing-footer {
+  padding-top: 80px;
+}
+
+.footer-cta-card {
+  width: min(100%, 760px);
+  text-align: center;
+}
+
+.footer-cta-title {
+  margin-bottom: 12px;
+  font-size: clamp(28px, 3.5vw, 40px);
+  line-height: 1.25;
+}
+
+.footer-cta-description {
+  margin-bottom: 28px;
+  color: var(--muted);
+  font-size: 20px;
+  line-height: 1.65;
+}
+
+.footer-cta-actions {
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+}
+
+.footer-cta-link {
+  padding: 12px 24px;
+}
+
+.footer-replay-btn {
+  display: inline-flex;
+>>>>>>> ea8a47c3e5c6e6f736d64404d82cb1779ead2a5f
   align-items: center;
   gap: 8px;
   border-bottom: 1px solid #1E293B;
@@ -710,5 +838,28 @@
   .simple-footer-inner {
     flex-direction: column;
     align-items: flex-start;
+  }
+}
+
+/* ==========================================================================
+   SMALL SCREENS: keep the hero clean (no overlapping HUD text or cards)
+   ========================================================================== */
+@media (max-width: 768px) {
+  .nav-optional,
+  .parallax-layer .mono,
+  .hero-scroll-prompt,
+  .collage-card-bl,
+  .collage-card-br {
+    display: none !important;
+  }
+}
+
+@media (max-width: 768px) {
+  .feature-graphic-panel [style*="space-between"] {
+    flex-wrap: wrap;
+    gap: 2px 12px;
+  }
+  .feature-graphic-panel .mono {
+    white-space: nowrap;
   }
 }
