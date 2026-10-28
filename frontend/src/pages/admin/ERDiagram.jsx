@@ -9,11 +9,17 @@ import {
   Plus,
   HelpCircle,
   Layers,
-  ArrowRight
+  ArrowRight,
+  ZoomIn,
+  ZoomOut,
+  PanelRightClose,
+  PanelRightOpen
 } from 'lucide-react';
 import '../../styles/erDiagram.css';
 
 // Dimensions and constants
+const CANVAS_WIDTH = 2600;
+const CANVAS_HEIGHT = 1350;
 const TABLE_WIDTH = 200;
 const ROW_HEIGHT = 28;
 const HEADER_HEIGHT = 40;
@@ -683,6 +689,23 @@ export default function ERDiagram() {
   const [showLabels, setShowLabels] = useState(true);
   const [toastMessage, setToastMessage] = useState('');
 
+  // Window enlargement and ergonomics
+  const [isMaximized, setIsMaximized] = useState(false);
+  const [isPanelCollapsed, setIsPanelCollapsed] = useState(false);
+  const [zoom, setZoom] = useState(1);
+
+  // Keyboard shortcut: Esc exits full window or closes selection
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        if (isMaximized) setIsMaximized(false);
+        else if (selectedTable) setSelectedTable(null);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isMaximized, selectedTable]);
+
   // Modeling inputs in side panel
   const [newColName, setNewColName] = useState('');
   const [newColType, setNewColType] = useState('varchar(100)');
@@ -916,15 +939,15 @@ export default function ERDiagram() {
   const handlePointerMove = (e) => {
     if (!dragRef.current) return;
     const { tableName, startX, startY, initX, initY } = dragRef.current;
-    const dx = e.clientX - startX;
-    const dy = e.clientY - startY;
+    const dx = (e.clientX - startX) / zoom;
+    const dy = (e.clientY - startY) / zoom;
 
     if (Math.abs(dx) + Math.abs(dy) > 4) {
       dragRef.current.moved = true;
     }
 
-    const nextX = Math.max(0, Math.min(2200 - TABLE_WIDTH, initX + dx));
-    const nextY = Math.max(0, Math.min(1100 - 60, initY + dy));
+    const nextX = Math.max(0, Math.min(CANVAS_WIDTH - TABLE_WIDTH, initX + dx));
+    const nextY = Math.max(0, Math.min(CANVAS_HEIGHT - 60, initY + dy));
 
     setTables((prev) => ({
       ...prev,
@@ -1030,12 +1053,12 @@ export default function ERDiagram() {
   );
 
   return (
-    <div className="erd-page">
+    <div className={`erd-page ${isMaximized ? 'is-maximized' : ''}`}>
       {/* ER Diagram Top Header */}
       <div className="erd-header">
         <div className="erd-title-group">
           <h1>
-            <Database size={26} color="var(--brand)" />
+            <Database size={24} color="var(--brand)" />
             <span>NimbusHost Enterprise Database ER Diagram</span>
           </h1>
           <p className="erd-subtitle">
@@ -1044,7 +1067,80 @@ export default function ERDiagram() {
           </p>
         </div>
 
-        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          {/* Zoom controls */}
+          <div
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              background: 'var(--card)',
+              border: '1.5px solid var(--line)',
+              borderRadius: 'var(--radius-full)',
+              padding: '2px 8px',
+              gap: 4
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => setZoom((z) => Math.max(0.5, Math.round((z - 0.1) * 10) / 10))}
+              title="Zoom Out"
+              style={{
+                background: 'transparent',
+                border: 'none',
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                padding: '4px',
+                color: 'var(--ink)'
+              }}
+            >
+              <ZoomOut size={14} />
+            </button>
+            <span
+              className="mono"
+              style={{
+                fontSize: 12,
+                fontWeight: 700,
+                minWidth: 42,
+                textAlign: 'center',
+                cursor: 'pointer',
+                userSelect: 'none'
+              }}
+              onClick={() => setZoom(1)}
+              title="Click to reset zoom to 100%"
+            >
+              {Math.round(zoom * 100)}%
+            </span>
+            <button
+              type="button"
+              onClick={() => setZoom((z) => Math.min(1.8, Math.round((z + 0.1) * 10) / 10))}
+              title="Zoom In"
+              style={{
+                background: 'transparent',
+                border: 'none',
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                padding: '4px',
+                color: 'var(--ink)'
+              }}
+            >
+              <ZoomIn size={14} />
+            </button>
+          </div>
+
+          {/* Toggle Side Panel button */}
+          <button
+            type="button"
+            className="erd-btn"
+            onClick={() => setIsPanelCollapsed(!isPanelCollapsed)}
+            title={isPanelCollapsed ? 'Show Details Panel' : 'Hide Details Panel (Wider Canvas)'}
+          >
+            {isPanelCollapsed ? <PanelRightOpen size={15} /> : <PanelRightClose size={15} />}
+            <span>{isPanelCollapsed ? 'Show Panel' : 'Hide Panel'}</span>
+          </button>
+
+          {/* Tidy Up button */}
           <button
             type="button"
             className="erd-btn"
@@ -1053,6 +1149,17 @@ export default function ERDiagram() {
           >
             <RotateCcw size={15} />
             <span>Tidy Up</span>
+          </button>
+
+          {/* Maximize / Full Window button */}
+          <button
+            type="button"
+            className="erd-btn erd-btn-brand"
+            onClick={() => setIsMaximized(!isMaximized)}
+            title={isMaximized ? 'Exit Full Window (Esc)' : 'Maximize ER Diagram Window (Full Screen)'}
+          >
+            {isMaximized ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
+            <span>{isMaximized ? 'Exit Full Window' : 'Full Window'}</span>
           </button>
         </div>
       </div>
@@ -1128,12 +1235,15 @@ export default function ERDiagram() {
       </div>
 
       {/* Main Grid: Interactive Canvas + Inspection Side Panel */}
-      <div className="erd-main">
+      <div className={`erd-main ${isPanelCollapsed ? 'panel-collapsed' : ''}`}>
         {/* Canvas Wrap */}
         <div className="erd-canvas-wrap" ref={canvasWrapRef}>
-          <div className="erd-canvas">
+          <div
+            className="erd-canvas"
+            style={{ transform: `scale(${zoom})`, transformOrigin: 'top left' }}
+          >
             {/* SVG Relationship Lines Layer */}
-            <svg className="erd-svg" width={2200} height={1100}>
+            <svg className="erd-svg" width={CANVAS_WIDTH} height={CANVAS_HEIGHT}>
               {relationships.map((r, i) => {
                 if (disabledTypes.has(r.k)) return null;
 
