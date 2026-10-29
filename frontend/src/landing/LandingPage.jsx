@@ -770,10 +770,10 @@ export default function LandingPage() {
           </p>
           <h1 className="cin-h1">
             <span className="cin-line">
-              <Words text="Rules live" />
+              <Words text="One Cloud" />
             </span>
             <span className="cin-line">
-              <Words text="in the database." />
+              <Words text="For All." />
             </span>
           </h1>
           <p className="cin-lead">
