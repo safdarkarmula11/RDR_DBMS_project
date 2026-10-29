@@ -29,17 +29,19 @@ try {
       checksum   CHAR(64) NOT NULL,
       applied_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP)`);
 
-  // Databases created by the Step 1 runner have no _migrations rows yet: adopt them.
+  // Databases created by legacy runners might have no _migrations rows yet: adopt them if the files exist.
   const [[cnt]] = await conn.query('SELECT COUNT(*) AS c FROM _migrations');
   if (cnt.c === 0) {
     const [legacy] = await conn.query(
       `SELECT 1 FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = 'users'`);
     if (legacy.length) {
       for (const f of ['01_core_identity.sql', '02_seed_core.sql']) {
-        await conn.query('INSERT IGNORE INTO _migrations(filename, checksum) VALUES (?,?)',
-          [f, sha(fs.readFileSync(path.join(dir, f), 'utf8'))]);
+        const filePath = path.join(dir, f);
+        if (fs.existsSync(filePath)) {
+          await conn.query('INSERT IGNORE INTO _migrations(filename, checksum) VALUES (?,?)',
+            [f, sha(fs.readFileSync(filePath, 'utf8'))]);
+        }
       }
-      console.log('Found an existing Step 1 database: marked 01 and 02 as already applied.');
     }
   }
 
