@@ -34,6 +34,29 @@ function makeGlowTexture() {
   return tex;
 }
 
+// Opaque backdrop used when bloom is on (the bloom composer cannot keep a transparent canvas).
+function makeBackgroundTexture() {
+  const c = document.createElement('canvas');
+  c.width = 512;
+  c.height = 512;
+  const g = c.getContext('2d');
+  g.fillStyle = '#05070d';
+  g.fillRect(0, 0, 512, 512);
+  let grad = g.createRadialGradient(384, 0, 0, 384, 0, 380);
+  grad.addColorStop(0, 'rgba(14,32,66,0.95)');
+  grad.addColorStop(1, 'rgba(14,32,66,0)');
+  g.fillStyle = grad;
+  g.fillRect(0, 0, 512, 512);
+  grad = g.createRadialGradient(50, 512, 0, 50, 512, 330);
+  grad.addColorStop(0, 'rgba(30,16,36,0.9)');
+  grad.addColorStop(1, 'rgba(30,16,36,0)');
+  g.fillStyle = grad;
+  g.fillRect(0, 0, 512, 512);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
 // Deterministic pseudo-random so the layout is identical on every load.
 function seeded(seed) {
   let s = seed;
@@ -105,7 +128,7 @@ export function initScene(canvas, { mobile = false, reduced = false } = {}) {
   renderer.setClearColor(0x000000, 0);
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, mobile ? 1.5 : 1.75));
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.1;
+  renderer.toneMappingExposure = 0.92;
 
   const scene = new THREE.Scene();
   scene.fog = new THREE.FogExp2(0x05070d, 0.032);
@@ -115,13 +138,13 @@ export function initScene(canvas, { mobile = false, reduced = false } = {}) {
 
   // ---- lights ----
   scene.add(new THREE.AmbientLight(0x1a2740, 0.9));
-  const key = new THREE.DirectionalLight(0x9fd8ff, 1.6);
+  const key = new THREE.DirectionalLight(0x9fd8ff, 1.3);
   key.position.set(4, 6, 5);
   scene.add(key);
-  const coreLight = new THREE.PointLight(ACCENT, 30, 14, 2);
+  const coreLight = new THREE.PointLight(ACCENT, 23, 14, 2);
   coreLight.position.set(0, 0, 3);
   scene.add(coreLight);
-  const rim = new THREE.PointLight(WARM, 22, 14, 2);
+  const rim = new THREE.PointLight(WARM, 17, 14, 2);
   rim.position.set(-4, -2, -3);
   scene.add(rim);
 
@@ -134,8 +157,12 @@ export function initScene(canvas, { mobile = false, reduced = false } = {}) {
   const core = new THREE.Group();
   world.add(core);
   const discMat = new THREE.MeshStandardMaterial({ color: 0x0b1424, metalness: 0.85, roughness: 0.32 });
-  const discGeo = new THREE.CylinderGeometry(1.15, 1.15, 0.2, 64, 1);
-  const edgeGeo = new THREE.TorusGeometry(1.155, 0.014, 12, 96);
+  const DISC_R = 1.50; // platter radius (width)
+  const DISC_H = 0.50; // platter thickness
+  const DISC_GAP = 0.2; // empty space between platters
+  const DISC_STEP = DISC_H + DISC_GAP;
+  const discGeo = new THREE.CylinderGeometry(DISC_R, DISC_R, DISC_H, 64, 1);
+  const edgeGeo = new THREE.TorusGeometry(DISC_R + 0.005, 0.014, 12, 96);
   const trackGeo = new THREE.RingGeometry(0.42, 0.44, 64);
   const accentMat = new THREE.MeshBasicMaterial({ color: ACCENT });
   const warmMat = new THREE.MeshBasicMaterial({ color: WARM });
@@ -146,7 +173,7 @@ export function initScene(canvas, { mobile = false, reduced = false } = {}) {
     side: THREE.DoubleSide,
   });
   for (let k = 0; k < 4; k++) {
-    const y = (k - 1.5) * 0.42;
+    const y = (k - 1.5) * DISC_STEP;
     const disc = new THREE.Mesh(discGeo, discMat);
     disc.position.y = y;
     core.add(disc);
@@ -156,7 +183,7 @@ export function initScene(canvas, { mobile = false, reduced = false } = {}) {
     core.add(edge);
     const track = new THREE.Mesh(trackGeo, trackMat);
     track.rotation.x = -Math.PI / 2;
-    track.position.y = y + 0.101;
+    track.position.y = y + DISC_H / 2 + 0.001;
     core.add(track);
   }
 
@@ -183,7 +210,7 @@ export function initScene(canvas, { mobile = false, reduced = false } = {}) {
 
   // ---- orbit rings with beads ----
   const ringGeos = [new THREE.TorusGeometry(2.1, 0.008, 8, 200), new THREE.TorusGeometry(2.9, 0.006, 8, 240)];
-  const ringMat = new THREE.MeshBasicMaterial({ color: ACCENT, transparent: true, opacity: 0.45 });
+  const ringMat = new THREE.MeshBasicMaterial({ color: ACCENT, transparent: true, opacity: 0.35 });
   const beadGeo = new THREE.SphereGeometry(0.07, 16, 16);
   const orbits = [
     { radius: 2.1, tilt: [1.1, 0.3], speed: 0.55, mat: warmMat, geo: ringGeos[0] },
@@ -226,9 +253,9 @@ export function initScene(canvas, { mobile = false, reduced = false } = {}) {
     new THREE.PointsMaterial({
       map: glowTex,
       color: ACCENT,
-      size: 0.5,
+      size: 0.45,
       transparent: true,
-      opacity: 0.7,
+      opacity: 0.55,
       depthWrite: false,
       blending: THREE.AdditiveBlending,
     }),
@@ -242,7 +269,7 @@ export function initScene(canvas, { mobile = false, reduced = false } = {}) {
   const lineMat = new THREE.LineBasicMaterial({
     color: ACCENT,
     transparent: true,
-    opacity: 0.26,
+    opacity: 0.2,
     blending: THREE.AdditiveBlending,
     depthWrite: false,
   });
@@ -268,9 +295,9 @@ export function initScene(canvas, { mobile = false, reduced = false } = {}) {
     pGeo,
     new THREE.PointsMaterial({
       color: 0x9fb8d0,
-      size: 0.045,
+      size: 0.04,
       transparent: true,
-      opacity: 0.55,
+      opacity: 0.42,
       depthWrite: false,
       blending: THREE.AdditiveBlending,
     }),
@@ -316,11 +343,40 @@ export function initScene(canvas, { mobile = false, reduced = false } = {}) {
     lineGeo.attributes.position.needsUpdate = true;
   }
 
+  // ---- optional bloom (desktop only, loaded lazily; falls back silently) ----
+  let composer = null;
+  let bgTex = null;
+  let disposed = false;
+  if (!mobile && !reduced) {
+    Promise.all([
+      import('three/addons/postprocessing/EffectComposer.js'),
+      import('three/addons/postprocessing/RenderPass.js'),
+      import('three/addons/postprocessing/UnrealBloomPass.js'),
+      import('three/addons/postprocessing/OutputPass.js'),
+    ])
+      .then(([ec, rp, ub, op]) => {
+        if (disposed) return;
+        const w = window.innerWidth;
+        const h = window.innerHeight;
+        const c = new ec.EffectComposer(renderer);
+        c.setPixelRatio(renderer.getPixelRatio());
+        c.setSize(w, h);
+        c.addPass(new rp.RenderPass(scene, camera));
+        c.addPass(new ub.UnrealBloomPass(new THREE.Vector2(w, h), 0.4, 0.6, 0.22));
+        c.addPass(new op.OutputPass());
+        bgTex = makeBackgroundTexture();
+        scene.background = bgTex;
+        composer = c;
+      })
+      .catch((err) => console.warn('Bloom unavailable, using plain rendering:', err));
+  }
+
   // ---- sizing ----
   function resize() {
     const w = window.innerWidth;
     const h = window.innerHeight;
     renderer.setSize(w, h, false);
+    if (composer) composer.setSize(w, h);
     camera.aspect = w / Math.max(h, 1);
     camera.updateProjectionMatrix();
   }
@@ -370,12 +426,13 @@ export function initScene(canvas, { mobile = false, reduced = false } = {}) {
     shell.rotation.y = -time * 0.06 * motion;
     shell.rotation.x = time * 0.04 * motion;
     shellMat.opacity = cur.shell;
-    halo.material.opacity = cur.glow;
+    halo.material.opacity = cur.glow * 0.75;
     particles.rotation.y = time * 0.015 * motion;
     for (const o of orbits) o.spin.rotation.z = time * o.speed * motion;
 
     updateGraph(time, cur.morph);
-    renderer.render(scene, camera);
+    if (composer) composer.render(dt);
+    else renderer.render(scene, camera);
   }
   raf = requestAnimationFrame(frame);
 
@@ -390,7 +447,10 @@ export function initScene(canvas, { mobile = false, reduced = false } = {}) {
       running = true;
     },
     dispose() {
+      disposed = true;
       cancelAnimationFrame(raf);
+      if (composer) composer.dispose();
+      if (bgTex) bgTex.dispose();
       window.removeEventListener('resize', resize);
       window.removeEventListener('pointermove', onPointer);
       scene.traverse((obj) => {
