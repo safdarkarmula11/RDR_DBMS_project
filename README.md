@@ -604,15 +604,5 @@ cd ../frontend
 npm install
 ```
 
-**Team**
-
-| Name | Role / area |
-|---|---|
-| _Add team member_ | _e.g. Database design and stored procedures_ |
-| _Add team member_ | _e.g. Backend API_ |
-| _Add team member_ | _e.g. Frontend console_ |
-| _Add team member_ | _e.g. Testing, reports and documentation_ |
-
----
 
 NimbusHost - AI203 DBMS Project - MySQL 8, Node.js/Express, React

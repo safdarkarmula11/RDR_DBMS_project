@@ -1,32 +1,31 @@
 import React, { useState } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
+import { ArrowUpRight, Eye, EyeOff, Lock, Mail } from 'lucide-react';
 import { useAuth } from './AuthContext';
-import Input from '../ui/Input';
-import Button from '../ui/Button';
-import Banner from '../ui/Banner';
-import AmbientBackground from '../ui/AmbientBackground';
-import { Lock, Mail } from 'lucide-react';
-import LemonLogo from '../ui/LemonLogo';
 import { HOME } from '../nav';
+import AuthShell from './AuthShell';
 
 const DEMO_LOGINS = [
-  { role: 'super_admin', label: 'Super Admin',   email: 'admin@nimbus.test',   pass: 'admin123' },
-  { role: 'support',     label: 'Support',        email: 'support@nimbus.test', pass: 'support123' },
-  { role: 'billing',     label: 'Billing',        email: 'billing@nimbus.test', pass: 'billing123' },
-  { role: 'customer',    label: 'Customer Owner', email: 'owner@acme.test',     pass: 'customer123' },
-  { role: 'customer',    label: 'Customer Member',email: 'dev@acme.test',       pass: 'customer123' },
+  { role: 'super_admin', label: 'Super Admin', email: 'admin@nimbus.test', pass: 'admin123' },
+  { role: 'support', label: 'Support', email: 'support@nimbus.test', pass: 'support123' },
+  { role: 'billing', label: 'Billing', email: 'billing@nimbus.test', pass: 'billing123' },
+  { role: 'customer', label: 'Customer Owner', email: 'owner@acme.test', pass: 'customer123' },
+  { role: 'customer', label: 'Customer Member', email: 'dev@acme.test', pass: 'customer123' },
 ];
 
 export default function LoginPage() {
   const { login } = useAuth();
-  const navigate  = useNavigate();
-  const location  = useLocation();
+  const navigate = useNavigate();
+  const location = useLocation();
 
   const isExpired = new URLSearchParams(location.search).get('expired') === '1';
 
-  const [email,    setEmail]    = useState('');
-  const [password, setPassword] = useState('');
-  const [loading,  setLoading]  = useState(false);
+  // The landing page can send a demo account in the navigation state ("Try as Support", etc.)
+  const preset = DEMO_LOGINS.find((d) => d.email === location.state?.demo);
+  const [email, setEmail] = useState(preset ? preset.email : '');
+  const [password, setPassword] = useState(preset ? preset.pass : '');
+  const [showPw, setShowPw] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState(null);
 
   const handleSubmit = async (e) => {
@@ -39,7 +38,7 @@ export default function LoginPage() {
     setErrorMsg(null);
     try {
       const loggedUser = await login(email, password);
-      const target = location.state?.from?.pathname || HOME[loggedUser.role] || '/';
+      const target = location.state?.from?.pathname || HOME[loggedUser.role] || '/dashboard';
       navigate(target, { replace: true });
     } catch (err) {
       setErrorMsg(err.msg || err.error || 'Failed to sign in. Verify credentials and database connection.');
@@ -55,108 +54,108 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="auth-root">
-      <AmbientBackground />
-
-      <div className="auth-card">
-        {/* Logo + title */}
-        <div className="auth-logo-wrap">
-          <div className="auth-logo-icon" style={{ background: 'rgba(250, 204, 21, 0.15)', border: '1px solid rgba(250, 204, 21, 0.35)' }}>
-            <LemonLogo size={32} />
-          </div>
-          <div>
-            <div className="auth-title">NimbusHost</div>
-            <div className="auth-subtitle">Cloud Infrastructure Management</div>
-          </div>
+    <AuthShell
+      docTitle="Sign in · NimbusHost"
+      eyebrow="Cloud Infrastructure Console"
+      headline={
+        <>
+          Welcome back to the <em>console.</em>
+        </>
+      }
+      lead="Pick up where you left off: servers, storage, domains and invoices, all backed by rules that live in the database."
+      points={[
+        'Role-based access for customers, support, billing and admins',
+        'Every important change lands in an append-only audit log',
+        'Sessions use short-lived tokens that rotate on refresh',
+      ]}
+      morph={0.3}
+    >
+      <div className="au-card">
+        <div className="au-card-head" style={{ '--i': 0 }}>
+          <h2>Sign in</h2>
+          <p>Use your NimbusHost account to continue.</p>
         </div>
 
         {isExpired && (
-          <Banner tone="warn" message="Session expired." hint="Please sign in again to continue." />
-        )}
-
-        {errorMsg && (
-          <Banner tone="danger" message={errorMsg} hint="Check your database seed users or password." />
-        )}
-
-        <form onSubmit={handleSubmit} noValidate>
-          <Input
-            label="Email Address"
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="name@example.com"
-            required
-            autoComplete="username"
-          />
-
-          <Input
-            label="Password"
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="••••••••"
-            required
-            autoComplete="current-password"
-          />
-
-          <div style={{ marginTop: 22 }}>
-            <Button
-              type="submit"
-              variant="primary"
-              loading={loading}
-              disabled={loading}
-              style={{ width: '100%', height: 42, fontSize: 14 }}
-            >
-              Sign In
-            </Button>
+          <div className="au-alert au-alert--warn" role="status" style={{ '--i': 1 }}>
+            <b>Session expired.</b> Please sign in again to continue.
           </div>
+        )}
+        {errorMsg && (
+          <div className="au-alert au-alert--error" role="alert">
+            {errorMsg}
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit} noValidate className="au-form">
+          <div className="au-field" style={{ '--i': 2 }}>
+            <label htmlFor="login-email">Email address</label>
+            <div className="au-input">
+              <Mail size={16} aria-hidden="true" />
+              <input
+                id="login-email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="name@example.com"
+                autoComplete="username"
+                required
+              />
+            </div>
+          </div>
+
+          <div className="au-field" style={{ '--i': 3 }}>
+            <label htmlFor="login-password">Password</label>
+            <div className="au-input">
+              <Lock size={16} aria-hidden="true" />
+              <input
+                id="login-password"
+                type={showPw ? 'text' : 'password'}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Your password"
+                autoComplete="current-password"
+                required
+              />
+              <button
+                type="button"
+                className="au-eye"
+                onClick={() => setShowPw((v) => !v)}
+                aria-label={showPw ? 'Hide password' : 'Show password'}
+              >
+                {showPw ? <EyeOff size={16} /> : <Eye size={16} />}
+              </button>
+            </div>
+          </div>
+
+          <button type="submit" className="au-submit" disabled={loading} style={{ '--i': 4 }}>
+            {loading ? <span className="au-spinner" aria-hidden="true" /> : null}
+            <span>{loading ? 'Signing in…' : 'Sign in'}</span>
+            {!loading && <ArrowUpRight size={18} />}
+          </button>
         </form>
 
-        <div style={{ marginTop: 16, textAlign: 'center', fontSize: 13, color: 'var(--muted)', display: 'flex', flexDirection: 'column', gap: 7 }}>
-          <div>
-            Don't have an account?{' '}
-            <Link to="/register" style={{ fontWeight: 600, color: 'var(--brand)' }}>
-              Create Organization
-            </Link>
-          </div>
-          <div>
-            <Link
-              to="/landing"
-              style={{ fontSize: 12, color: 'var(--muted)', textDecoration: 'none' }}
-              onMouseEnter={e => e.target.style.color = 'var(--brand)'}
-              onMouseLeave={e => e.target.style.color = 'var(--muted)'}
-            >
-              ← Interactive Platform Tour &amp; Architecture
-            </Link>
-          </div>
-        </div>
+        <p className="au-switch" style={{ '--i': 5 }}>
+          New to NimbusHost? <Link to="/register">Create an organization</Link>
+        </p>
 
-        {/* Demo credentials */}
-        <div style={{ marginTop: 24, paddingTop: 18, borderTop: '1px solid var(--line)' }}>
-          <div style={{
-            fontSize: 11,
-            fontWeight: 700,
-            color: 'var(--subtle)',
-            marginBottom: 10,
-            textTransform: 'uppercase',
-            letterSpacing: '0.06em',
-          }}>
-            Demo one-click credentials
-          </div>
-          <div className="demo-grid">
-            {DEMO_LOGINS.map((demo) => (
+        <div className="au-demo" style={{ '--i': 6 }}>
+          <span className="au-demo-title">Demo accounts · one click fills the form</span>
+          <div className="au-chips">
+            {DEMO_LOGINS.map((d) => (
               <button
-                key={demo.email}
+                key={d.email}
                 type="button"
-                className="demo-pill"
-                onClick={() => fillDemo(demo)}
+                className={`au-chip${email === d.email ? ' is-on' : ''}`}
+                onClick={() => fillDemo(d)}
               >
-                {demo.label}
+                <i aria-hidden="true" />
+                {d.label}
               </button>
             ))}
           </div>
         </div>
       </div>
-    </div>
+    </AuthShell>
   );
 }
