@@ -20,23 +20,56 @@ gsap.registerPlugin(ScrollTrigger);
 const TEAM = [
   {
     name: 'Safdar Karmula',
-    area: '',
-    focus: [],
+    area: 'Database Functions, Views, Seed Data, and Documentation',
+    focus: [
+      'Functions, views and seed data',
+      'Metering, billing, pricing and scheduled events',
+      'Triggers, audit trail and integrity tests',
+      'Customer frontend',
+      'Admin, billing and support frontend',
+      'Documentation, final report, PPT, demo script and acceptance tests',
+    ],
   },
+
   {
     name: 'Suyash Naik',
-    area: '',
-    focus: [],
+    area: 'Database Architecture, Compute, Analytics and Backend',
+    focus: [
+      'Schema design, normalization proof and ER diagram',
+      'Compute scheduler and concurrency',
+      'Metering, billing, pricing and scheduled events',
+      'Backend API, Zod validation and error mapping',
+      'Analytics, reports, star schema and Performance Lab',
+      'Admin, billing and support frontend',
+    ],
   },
+
   {
     name: 'Nishit Gamit',
-    area: '',
-    focus: [],
+    area: 'Database Procedures, Backend Infrastructure and Analytics',
+    focus: [
+      'Functions, views and seed data',
+      'Compute scheduler and concurrency',
+      'Storage and network procedures',
+      'Security, roles and grants, JWT auth, RBAC, backup and restore',
+      'Metering, billing, pricing and scheduled events',
+      'Analytics, reports, star schema and Performance Lab',
+      'Documentation, final report, PPT, demo script and acceptance tests',
+    ],
   },
+
   {
     name: 'Yugesh Ratnaparkhi',
-    area: '',
-    focus: [''],
+    area: 'Database Design, Storage, Security and Frontend',
+    focus: [
+      'Schema design, normalization proof and ER diagram',
+      'Functions, views and seed data',
+      'Storage and network procedures',
+      'Triggers, audit trail and integrity tests',
+      'Security, roles and grants, JWT auth, RBAC, backup and restore',
+      'Backend API, Zod validation and error mapping',
+      'Customer frontend',
+    ],
   },
 ];
 
