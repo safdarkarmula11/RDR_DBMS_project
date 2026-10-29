@@ -157,9 +157,9 @@ export function initScene(canvas, { mobile = false, reduced = false } = {}) {
   const core = new THREE.Group();
   world.add(core);
   const discMat = new THREE.MeshStandardMaterial({ color: 0x0b1424, metalness: 0.85, roughness: 0.32 });
-  const DISC_R = 1.50; // platter radius (width)
-  const DISC_H = 0.50; // platter thickness
-  const DISC_GAP = 0.2; // empty space between platters
+  const DISC_R = 2.00; // platter radius (width)
+  const DISC_H = 0.75; // platter thickness
+  const DISC_GAP = 0.3; // empty space between platters
   const DISC_STEP = DISC_H + DISC_GAP;
   const discGeo = new THREE.CylinderGeometry(DISC_R, DISC_R, DISC_H, 64, 1);
   const edgeGeo = new THREE.TorusGeometry(DISC_R + 0.005, 0.014, 12, 96);
