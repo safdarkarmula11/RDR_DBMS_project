@@ -414,7 +414,7 @@ export function initScene(canvas, { mobile = false, reduced = false } = {}) {
 
     // world transform: scroll offset + mouse parallax + slow spin
     world.position.x = cur.x;
-    world.rotation.y = cur.ry + pointer.px * 0.35 + time * cur.spin * motion;
+    world.rotation.y = cur.ry + pointer.px * 0.35 + time * cur.spin * motion*0.7;
     world.rotation.x = pointer.py * 0.18;
     camera.position.z = cur.z;
     camera.position.x = pointer.px * 0.4;
