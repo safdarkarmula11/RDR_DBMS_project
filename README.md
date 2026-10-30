@@ -532,6 +532,7 @@ This script deletes all rows from the application tables (including users) and s
 | No usage appears (events never run) | `SET PERSIST event_scheduler = ON;` and check `SHOW VARIABLES LIKE 'event_scheduler';` |
 | "X was edited after it was applied" | Run `npm run db:reset` then `npm run seed-users` (development), or add a new numbered SQL file. |
 | Customer login fails or the launch catalog is empty | The seed was not loaded. Run `npm run db:setup` then `npm run seed-users`. |
+| `Table 'nimbushost.v_invoice_items' doesn't exist` | Run `npm run db:setup` from `backend/` to apply `08_ensure_derived_views.sql`, then restart the API. |
 | `http://localhost:5000` shows `NOT_FOUND` | Normal. Use `/api/health` and the website on port 5173. |
 | Port 5000 already in use | Change `PORT` in `.env` and the proxy target in `frontend/vite.config.js`. |
 | UI shows "Cannot reach the API" | The backend is not running or the port differs. |
